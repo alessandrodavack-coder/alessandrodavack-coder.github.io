@@ -514,14 +514,15 @@ async function fetchShift() {
     const resp = await fetch(url);
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
+    const today = new Date();
+    const todayStr = today.getFullYear() + '-' +
+      String(today.getMonth() + 1).padStart(2,'0') + '-' +
+      String(today.getDate()).padStart(2,'0');
+
     const events = (data.items || []).filter(e => {
       if (!e.start || !e.start.dateTime) return false;
-      const start = new Date(e.start.dateTime);
-      const today = new Date();
-      // Solo eventi che INIZIANO oggi
-      return start.getDate() === today.getDate() &&
-             start.getMonth() === today.getMonth() &&
-             start.getFullYear() === today.getFullYear();
+      // Confronta solo la parte data (YYYY-MM-DD) ignorando ore e fuso orario
+      return e.start.dateTime.slice(0, 10) === todayStr;
     });
     if (!events.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = events[0];
