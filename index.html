@@ -505,28 +505,34 @@ async function fetchShift() {
   try {
     const now = new Date();
 
-    // Data di oggi e ieri in locale (YYYY-MM-DD)
-    const todayStr = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2,'0') + '-' +
-      String(now.getDate()).padStart(2,'0');
-    const yest = new Date(now);
-    yest.setDate(yest.getDate() - 1);
-    const yesterdayStr = yest.getFullYear() + '-' +
-      String(yest.getMonth() + 1).padStart(2,'0') + '-' +
-      String(yest.getDate()).padStart(2,'0');
+    // Offset locale in formato +HH:MM (es. +01:00 o +02:00 per ora legale)
+    const off = -now.getTimezoneOffset();
+    const offH = String(Math.floor(Math.abs(off)/60)).padStart(2,'0');
+    const offM = String(Math.abs(off)%60).padStart(2,'0');
+    const offStr = (off >= 0 ? '+' : '-') + offH + ':' + offM;
 
-    // Chiedi eventi da ieri a fine oggi (copre turni notturni)
-    const tMin = yesterdayStr + 'T00:00:00';
-    const tMax = todayStr + 'T23:59:59';
+    const pad = n => String(n).padStart(2,'0');
+    const toLocalISO = d =>
+      d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+      'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + offStr;
+
+    const todayStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+    const yest = new Date(now); yest.setDate(yest.getDate()-1);
+    const yesterdayStr = yest.getFullYear() + '-' + pad(yest.getMonth()+1) + '-' + pad(yest.getDate());
+
+    // Query da inizio di ieri a fine di oggi in orario locale
+    const startOfYesterday = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0);
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+
     const calId = encodeURIComponent(cfg.calendarId);
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${tMin}&timeMax=${tMax}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime`;
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${encodeURIComponent(toLocalISO(startOfYesterday))}&timeMax=${encodeURIComponent(toLocalISO(endOfToday))}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime&timeZone=Europe%2FRome`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
 
     const allEvents = (data.items || []).filter(e => e.start && e.start.dateTime);
 
-    // 1) Turno di ieri ancora in corso adesso?
+    // 1) Turno iniziato ieri ancora in corso adesso?
     const overnight = allEvents.find(e => {
       const start = new Date(e.start.dateTime);
       const end = new Date(e.end.dateTime);
