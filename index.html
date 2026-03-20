@@ -510,7 +510,15 @@ async function fetchShift() {
     const todayStr = t.getFullYear() + '-' +
       String(t.getMonth() + 1).padStart(2,'0') + '-' +
       String(t.getDate()).padStart(2,'0');
-    const tMin = todayStr + 'T00:00:00';
+
+    // Cerca anche il giorno precedente per turni notturni ancora attivi
+    const yesterday = new Date(t);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.getFullYear() + '-' +
+      String(yesterday.getMonth() + 1).padStart(2,'0') + '-' +
+      String(yesterday.getDate()).padStart(2,'0');
+
+    const tMin = yesterdayStr + 'T00:00:00';
     const tMax = todayStr + 'T23:59:59';
     const calId = encodeURIComponent(cfg.calendarId);
     const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${tMin}&timeMax=${tMax}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime`;
@@ -522,11 +530,34 @@ async function fetchShift() {
       String(today.getMonth() + 1).padStart(2,'0') + '-' +
       String(today.getDate()).padStart(2,'0');
 
-    const events = (data.items || []).filter(e => {
-      if (!e.start || !e.start.dateTime) return false;
-      // Confronta solo la parte data (YYYY-MM-DD) ignorando ore e fuso orario
-      return e.start.dateTime.slice(0, 10) === todayStr;
+    const now = new Date();
+    const todayStr2 = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2,'0') + '-' +
+      String(now.getDate()).padStart(2,'0');
+
+    const allEvents = (data.items || []).filter(e => e.start && e.start.dateTime);
+
+    // Prima controlla se c'è un turno di ieri ancora in corso (notturno)
+    const activeOvernight = allEvents.find(e => {
+      const start = new Date(e.start.dateTime);
+      const end = new Date(e.end.dateTime);
+      const startedYesterday = e.start.dateTime.slice(0,10) !== todayStr2;
+      return startedYesterday && now >= start && now <= end;
     });
+
+    if (activeOvernight) {
+      // Turno notturno ancora attivo — mostra quello
+      const ev = activeOvernight;
+      todayShift = {
+        titolo: ev.summary || 'Turno',
+        inizio: new Date(ev.start.dateTime),
+        fine: new Date(ev.end.dateTime)
+      };
+      return todayShift;
+    }
+
+    // Altrimenti prendi il primo turno che inizia oggi
+    const events = allEvents.filter(e => e.start.dateTime.slice(0, 10) === todayStr2);
     if (!events.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = events[0];
     todayShift = {
