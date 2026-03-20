@@ -532,7 +532,20 @@ async function fetchShift() {
       return todayShift;
     }
 
-    // 2) Primo turno che inizia oggi (confronto data locale)
+    // 2) Turno iniziato ieri che è già finito dopo mezzanotte (es. finiva alle 00:30, esco alle 01:00)
+    //    → mostro comunque quello perché è il turno di riferimento per il calcolo FLH
+    const overnightEnded = allEvents.find(e => {
+      const start = new Date(e.start.dateTime);
+      const end = new Date(e.end.dateTime);
+      const endStr = end.getFullYear() + '-' + pad(end.getMonth()+1) + '-' + pad(end.getDate());
+      return e.start.dateTime.slice(0,10) === yesterdayStr && endStr === todayStr && now > end;
+    });
+    if (overnightEnded) {
+      todayShift = { titolo: overnightEnded.summary || 'Turno', inizio: new Date(overnightEnded.start.dateTime), fine: new Date(overnightEnded.end.dateTime) };
+      return todayShift;
+    }
+
+    // 3) Primo turno che inizia oggi (confronto data locale)
     const todayEvents = allEvents.filter(e => {
       const start = new Date(e.start.dateTime);
       const localDate = start.getFullYear() + '-' + pad(start.getMonth()+1) + '-' + pad(start.getDate());
