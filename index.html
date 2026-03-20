@@ -507,8 +507,11 @@ async function fetchShift() {
   }
   try {
     const t = new Date();
-    const tMin = new Date(t.getFullYear(), t.getMonth(), t.getDate()).toISOString();
-    const tMax = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1).toISOString();
+    const todayStr = t.getFullYear() + '-' +
+      String(t.getMonth() + 1).padStart(2,'0') + '-' +
+      String(t.getDate()).padStart(2,'0');
+    const tMin = todayStr + 'T00:00:00';
+    const tMax = todayStr + 'T23:59:59';
     const calId = encodeURIComponent(cfg.calendarId);
     const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${tMin}&timeMax=${tMax}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime`;
     const resp = await fetch(url);
