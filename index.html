@@ -504,28 +504,17 @@ async function fetchShift() {
   if (!cfg.apiKey || !cfg.calendarId) { calendarError = 'setup'; return null; }
   try {
     const now = new Date();
-
-    // Offset locale in formato +HH:MM (es. +01:00 o +02:00 per ora legale)
-    const off = -now.getTimezoneOffset();
-    const offH = String(Math.floor(Math.abs(off)/60)).padStart(2,'0');
-    const offM = String(Math.abs(off)%60).padStart(2,'0');
-    const offStr = (off >= 0 ? '+' : '-') + offH + ':' + offM;
-
     const pad = n => String(n).padStart(2,'0');
-    const toLocalISO = d =>
-      d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
-      'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + offStr;
-
     const todayStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
     const yest = new Date(now); yest.setDate(yest.getDate()-1);
     const yesterdayStr = yest.getFullYear() + '-' + pad(yest.getMonth()+1) + '-' + pad(yest.getDate());
 
-    // Query da inizio di ieri a fine di oggi in orario locale
-    const startOfYesterday = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0);
-    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+    // Google Calendar vuole RFC3339 in UTC — inizio ieri / fine oggi
+    const tMin = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0).toISOString();
+    const tMax = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
 
     const calId = encodeURIComponent(cfg.calendarId);
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${encodeURIComponent(toLocalISO(startOfYesterday))}&timeMax=${encodeURIComponent(toLocalISO(endOfToday))}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime&timeZone=Europe%2FRome`;
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${tMin}&timeMax=${tMax}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime`;
     const resp = await fetch(url);
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
@@ -538,14 +527,17 @@ async function fetchShift() {
       const end = new Date(e.end.dateTime);
       return e.start.dateTime.slice(0,10) === yesterdayStr && now >= start && now <= end;
     });
-
     if (overnight) {
       todayShift = { titolo: overnight.summary || 'Turno', inizio: new Date(overnight.start.dateTime), fine: new Date(overnight.end.dateTime) };
       return todayShift;
     }
 
-    // 2) Primo turno che inizia oggi
-    const todayEvents = allEvents.filter(e => e.start.dateTime.slice(0,10) === todayStr);
+    // 2) Primo turno che inizia oggi (confronto data locale)
+    const todayEvents = allEvents.filter(e => {
+      const start = new Date(e.start.dateTime);
+      const localDate = start.getFullYear() + '-' + pad(start.getMonth()+1) + '-' + pad(start.getDate());
+      return localDate === todayStr;
+    });
     if (!todayEvents.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = todayEvents[0];
     todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime) };
