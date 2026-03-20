@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FLH">
+<title>FLH Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #090909;
+  --s1: #111111;
+  --s2: #181818;
+  --s3: #222222;
+  --border: #2a2a2a;
+  --acc: #F59E0B;
+  --acc2: #FCD34D;
+  --green: #10B981;
+  --red: #EF4444;
+  --blue: #60A5FA;
+  --t1: #F0F0F0;
+  --t2: #888;
+  --t3: #444;
+  --mono: 'DM Mono', monospace;
+  --sans: 'Sora', sans-serif;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--t1);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* LAYOUT */
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+#topbar {
+  padding: calc(var(--safe-top) + 12px) 20px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+#topbar .title { font-size: 13px; font-family: var(--mono); color: var(--t2); letter-spacing: 0.1em; text-transform: uppercase; }
+#topbar .right { display: flex; gap: 8px; }
+#content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 0 0 16px; }
+#bottomnav {
+  display: flex;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  padding-bottom: var(--safe-bottom);
+  flex-shrink: 0;
+}
+.nav-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 8px; background: none; border: none; cursor: pointer;
+  color: var(--t3); font-family: var(--sans); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase; transition: color .15s;
+}
+.nav-btn.active { color: var(--acc); }
+.nav-btn .ico { font-size: 20px; }
+.icon-btn {
+  background: var(--s2); border: 1px solid var(--border); border-radius: 8px;
+  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; color: var(--t2);
+}
+
+/* SCREENS */
+.screen { display: none; padding: 20px; }
+.screen.active { display: block; }
+
+/* CARDS */
+.card {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px 20px; margin-bottom: 12px;
+}
+.card-label { font-size: 10px; font-family: var(--mono); color: var(--t3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+.card-value { font-size: 28px; font-weight: 700; font-family: var(--mono); color: var(--t1); letter-spacing: -0.5px; }
+.card-sub { font-size: 12px; color: var(--t2); margin-top: 4px; }
+
+/* STATUS BADGE */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  font-family: var(--mono);
+}
+.status-badge.at-work { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
+.status-badge.not-work { background: rgba(255,255,255,.04); color: var(--t3); border: 1px solid var(--border); }
+.status-badge.unknown { background: rgba(96,165,250,.1); color: var(--blue); border: 1px solid rgba(96,165,250,.3); }
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* SHIFT CARD */
+.shift-card {
+  background: linear-gradient(135deg, #141414 0%, #0f0f0f 100%);
+  border: 1px solid var(--border); border-left: 3px solid var(--acc);
+  border-radius: 14px; padding: 18px 20px; margin-bottom: 12px;
+}
+.shift-title { font-size: 13px; font-weight: 600; color: var(--acc); margin-bottom: 10px; font-family: var(--mono); }
+.shift-times { display: flex; align-items: center; gap: 10px; }
+.shift-time { font-size: 26px; font-weight: 700; font-family: var(--mono); }
+.shift-arrow { color: var(--t3); font-size: 14px; }
+.shift-delta { font-size: 11px; color: var(--t2); margin-top: 6px; font-family: var(--mono); }
+
+/* ARRIVAL CARD */
+.arrival-card {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 14px;
+  padding: 14px 20px; margin-bottom: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.arrival-info .label { font-size: 10px; font-family: var(--mono); color: var(--t3); text-transform: uppercase; letter-spacing: .1em; }
+.arrival-info .time { font-size: 20px; font-family: var(--mono); font-weight: 500; color: var(--t1); margin-top: 2px; }
+
+/* MAIN BUTTON */
+.btn-main {
+  width: 100%; padding: 16px; border-radius: 14px; border: none; cursor: pointer;
+  font-family: var(--sans); font-size: 16px; font-weight: 700; letter-spacing: -0.2px;
+  transition: all .15s; position: relative; overflow: hidden;
+}
+.btn-main:active { transform: scale(.97); }
+.btn-main.arrival { background: var(--acc); color: #000; }
+.btn-main.departure { background: var(--s2); color: var(--t1); border: 1px solid var(--border); }
+.btn-main.disabled { background: var(--s2); color: var(--t3); border: 1px solid var(--border); pointer-events: none; }
+.btn-secondary {
+  width: 100%; padding: 13px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--s2); color: var(--t2); cursor: pointer; font-family: var(--sans);
+  font-size: 14px; font-weight: 600; margin-top: 8px; transition: all .15s;
+}
+.btn-secondary:active { background: var(--s3); }
+.btn-small {
+  padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--s2); color: var(--t2); cursor: pointer; font-family: var(--mono);
+  font-size: 11px; font-weight: 500;
+}
+
+/* PROGRESS RING */
+.progress-wrap { display: flex; flex-direction: column; align-items: center; padding: 24px 20px 8px; }
+.ring-container { position: relative; width: 180px; height: 180px; }
+.ring-container svg { transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--s3); stroke-width: 14; }
+.ring-fill { fill: none; stroke: var(--acc); stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset .6s cubic-bezier(.4,0,.2,1); }
+.ring-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); text-align: center; }
+.ring-value { font-size: 28px; font-weight: 700; font-family: var(--mono); color: var(--t1); letter-spacing: -1px; }
+.ring-label { font-size: 10px; color: var(--t3); font-family: var(--mono); text-transform: uppercase; margin-top: 2px; }
+.ring-limit { font-size: 12px; color: var(--t2); margin-top: 12px; font-family: var(--mono); }
+
+/* LOG LIST */
+.log-list { margin-top: 4px; }
+.log-item {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 10px;
+  padding: 12px 16px; margin-bottom: 8px; display: grid;
+  grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center;
+}
+.log-date { font-size: 11px; font-family: var(--mono); color: var(--t3); }
+.log-turno { font-size: 13px; font-weight: 600; color: var(--t1); }
+.log-details { font-size: 11px; color: var(--t2); font-family: var(--mono); }
+.log-flh { font-size: 18px; font-weight: 700; font-family: var(--mono); color: var(--acc); text-align: right; }
+.log-flh.zero { color: var(--t3); font-size: 14px; }
+
+/* ARCHIVIO */
+.archive-item {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 20px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+}
+.archive-mese { font-size: 14px; font-weight: 600; }
+.archive-tot { font-size: 20px; font-family: var(--mono); font-weight: 700; color: var(--acc); }
+.archive-giorni { font-size: 11px; color: var(--t3); font-family: var(--mono); margin-top: 2px; }
+
+/* MODAL */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.85); backdrop-filter: blur(4px);
+  z-index: 100; display: flex; align-items: flex-end;
+  opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 24px 24px 0 0;
+  padding: 24px 20px calc(var(--safe-bottom) + 24px); width: 100%;
+  transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+}
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal-handle { width: 36px; height: 4px; background: var(--s3); border-radius: 2px; margin: 0 auto 20px; }
+.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+
+/* MENSA TOGGLE */
+.mensa-toggle { display: flex; gap: 10px; margin-bottom: 20px; }
+.mensa-btn {
+  flex: 1; padding: 14px; border-radius: 12px; border: 2px solid var(--border);
+  background: var(--s2); color: var(--t2); cursor: pointer; font-family: var(--sans);
+  font-size: 15px; font-weight: 600; text-align: center; transition: all .15s;
+}
+.mensa-btn.selected { border-color: var(--acc); color: var(--acc); background: rgba(245,158,11,.08); }
+
+/* FLH PREVIEW in modal */
+.flh-preview {
+  background: var(--s2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px; margin-bottom: 20px;
+}
+.flh-preview-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.flh-preview-row:last-child { border-bottom: none; padding-top: 10px; }
+.flh-preview-label { font-size: 12px; color: var(--t2); font-family: var(--mono); }
+.flh-preview-val { font-size: 13px; font-family: var(--mono); font-weight: 500; color: var(--t1); }
+.flh-preview-total { font-size: 22px; font-family: var(--mono); font-weight: 700; color: var(--acc); }
+
+/* SETUP */
+.setup-group { margin-bottom: 20px; }
+.setup-label { font-size: 11px; font-family: var(--mono); color: var(--t3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }
+.setup-input {
+  width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--s2); color: var(--t1); font-family: var(--mono); font-size: 14px;
+  outline: none;
+}
+.setup-input:focus { border-color: var(--acc); }
+.setup-hint { font-size: 11px; color: var(--t3); margin-top: 5px; line-height: 1.4; }
+
+/* ALERT BANNER */
+.alert-banner {
+  background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 12px;
+  font-size: 12px; color: var(--acc2); line-height: 1.5;
+}
+.alert-banner.error { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #FCA5A5; }
+.alert-banner.success { background: rgba(16,185,129,.1); border-color: rgba(16,185,129,.3); color: #6EE7B7; }
+
+/* DIVIDER */
+.divider { height: 1px; background: var(--border); margin: 16px 0; }
+.section-title { font-size: 11px; font-family: var(--mono); color: var(--t3); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 10px; }
+
+/* EMPTY STATE */
+.empty { text-align: center; padding: 40px 20px; color: var(--t3); font-size: 13px; }
+.empty .ico { font-size: 36px; margin-bottom: 12px; }
+
+/* SPINNER */
+.spinner {
+  width: 20px; height: 20px; border: 2px solid var(--s3);
+  border-top-color: var(--acc); border-radius: 50%;
+  animation: spin .6s linear infinite; display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* EXPORT */
+.export-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--s2); color: var(--t1); cursor: pointer; font-family: var(--sans);
+  font-size: 14px; font-weight: 600; margin-bottom: 10px; transition: background .15s;
+}
+.export-btn:active { background: var(--s3); }
+.export-btn .ico { font-size: 20px; }
+
+/* ANIMATIONS */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.screen.active { animation: fadeIn .2s ease; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="title" id="topbar-title">FLH TRACKER</div>
+    <div class="right">
+      <div class="icon-btn" id="refresh-btn" title="Aggiorna">🔄</div>
+      <div class="icon-btn" id="settings-btn" title="Impostazioni">⚙️</div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div id="content">
+
+    <!-- SCREEN: OGGI -->
+    <div class="screen active" id="screen-oggi">
+      <div id="oggi-content">
+        <!-- dynamic content -->
+      </div>
+    </div>
+
+    <!-- SCREEN: MESE -->
+    <div class="screen" id="screen-mese">
+      <div id="mese-content"></div>
+    </div>
+
+    <!-- SCREEN: STORICO -->
+    <div class="screen" id="screen-storico">
+      <div id="storico-content"></div>
+    </div>
+
+    <!-- SCREEN: SETUP -->
+    <div class="screen" id="screen-setup">
+      <div id="setup-content"></div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM NAV -->
+  <nav id="bottomnav">
+    <button class="nav-btn active" data-screen="oggi">
+      <span class="ico">🕐</span>Oggi
+    </button>
+    <button class="nav-btn" data-screen="mese">
+      <span class="ico">📊</span>Mese
+    </button>
+    <button class="nav-btn" data-screen="storico">
+      <span class="ico">📁</span>Storico
+    </button>
+  </nav>
+</div>
+
+<!-- MODAL: REGISTRA USCITA -->
+<div class="modal-overlay" id="modal-uscita">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Registra Uscita</div>
+    <div id="modal-uscita-content"></div>
+  </div>
+</div>
+
+<!-- MODAL: RISULTATO FLH -->
+<div class="modal-overlay" id="modal-risultato">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✅ FLH Registrato</div>
+    <div id="modal-risultato-content"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// STORAGE
+// ─────────────────────────────────────────────
+const S = {
+  get: k => { try { return JSON.parse(localStorage.getItem('flh_' + k)); } catch { return null; } },
+  set: (k, v) => localStorage.setItem('flh_' + k, JSON.stringify(v)),
+  del: k => localStorage.removeItem('flh_' + k),
+};
+
+const defaultConfig = {
+  apiKey: '',
+  calendarId: '',
+  workLat: 41.9248,
+  workLng: 12.4598,
+  workRadius: 150,
+};
+
+function getConfig() {
+  return Object.assign({}, defaultConfig, S.get('config') || {});
+}
+
+function getMeseKey(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+function controllaCambioMese() {
+  const meseAttivo = S.get('mese_attivo');
+  const meseOggi = getMeseKey();
+  if (meseAttivo && meseAttivo !== meseOggi) {
+    // Archivia mese precedente
+    const totMin = S.get('mese_corrente') || 0;
+    const log = S.get('log_corrente') || [];
+    const archivio = S.get('archivio') || [];
+    archivio.unshift({
+      mese: meseAttivo,
+      totMin: totMin,
+      totFmt: minToHM(totMin),
+      giorni: log
+    });
+    S.set('archivio', archivio);
+    // Reset
+    S.set('mese_corrente', 0);
+    S.set('log_corrente', []);
+    S.del('arrivo');
+  }
+  S.set('mese_attivo', meseOggi);
+}
+
+// ─────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────
+function minToHM(min) {
+  min = Math.max(0, Math.round(min));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h + 'h ' + String(m).padStart(2, '0') + 'm';
+}
+
+function fmtTime(d) {
+  if (!d) return '--:--';
+  d = new Date(d);
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function fmtDate(d) {
+  d = new Date(d);
+  const giorni = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+  const mesi = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+  return giorni[d.getDay()] + ' ' + d.getDate() + ' ' + mesi[d.getMonth()];
+}
+
+function nomeMese(key) {
+  const [y, m] = key.split('-');
+  const nomi = ['Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
+                'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre'];
+  return nomi[parseInt(m) - 1] + ' ' + y;
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dl = (lat2 - lat1) * Math.PI / 180;
+  const do_ = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dl/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(do_/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function isToday(isoStr) {
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  const t = new Date();
+  return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
+}
+
+// ─────────────────────────────────────────────
+// FLH CALCULATION
+// ─────────────────────────────────────────────
+function calcolaFLH(arrivo, uscita, turnoInizio, turnoFine) {
+  const a = new Date(arrivo);
+  const u = new Date(uscita);
+  const ti = new Date(turnoInizio);
+  const tf = new Date(turnoFine);
+
+  // testa: arrivato DOPO l'inizio turno
+  let testa = a > ti ? Math.round((a - ti) / 60000) : 0;
+  // coda: uscito PRIMA della fine turno
+  let coda = u < tf ? Math.round((tf - u) / 60000) : 0;
+
+  let tot = testa + coda;
+  if (tot < 15) tot = 0; // sotto 15 min non conta
+  if (tot > 120) tot = 120; // max 2h
+
+  // Se cappato, ricalcola testa/coda proporzionalmente per display
+  if (tot > 0 && tot < testa + coda) {
+    const r = tot / (testa + coda);
+    testa = Math.round(testa * r);
+    coda = tot - testa;
+  } else if (tot === 0) {
+    testa = 0; coda = 0;
+  }
+
+  return { testa, coda, tot, fmt: minToHM(tot) };
+}
+
+// ─────────────────────────────────────────────
+// GEOLOCATION
+// ─────────────────────────────────────────────
+let geoStatus = 'unknown'; // unknown | at_work | away
+let lastPos = null;
+
+function checkGeo() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) { geoStatus = 'unavailable'; resolve(geoStatus); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      lastPos = pos;
+      const cfg = getConfig();
+      const dist = haversine(pos.coords.latitude, pos.coords.longitude, cfg.workLat, cfg.workLng);
+      geoStatus = dist <= cfg.workRadius ? 'at_work' : 'away';
+      resolve(geoStatus);
+    }, () => {
+      geoStatus = 'unknown';
+      resolve(geoStatus);
+    }, { timeout: 8000, maximumAge: 60000 });
+  });
+}
+
+// ─────────────────────────────────────────────
+// GOOGLE CALENDAR
+// ─────────────────────────────────────────────
+let todayShift = null;
+let calendarError = null;
+
+async function fetchShift() {
+  const cfg = getConfig();
+  calendarError = null;
+  if (!cfg.apiKey || !cfg.calendarId) {
+    calendarError = 'setup';
+    return null;
+  }
+  try {
+    const t = new Date();
+    const tMin = new Date(t.getFullYear(), t.getMonth(), t.getDate()).toISOString();
+    const tMax = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1).toISOString();
+    const calId = encodeURIComponent(cfg.calendarId);
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${calId}/events?timeMin=${tMin}&timeMax=${tMax}&key=${cfg.apiKey}&singleEvents=true&orderBy=startTime`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.error) { calendarError = data.error.message; return null; }
+    const events = (data.items || []).filter(e => e.start && e.start.dateTime);
+    if (!events.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
+    const ev = events[0];
+    todayShift = {
+      titolo: ev.summary || 'Turno',
+      inizio: new Date(ev.start.dateTime),
+      fine: new Date(ev.end.dateTime)
+    };
+    return todayShift;
+  } catch (e) {
+    calendarError = 'Errore di rete — riprova';
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// RENDER: OGGI
+// ─────────────────────────────────────────────
+async function renderOggi(refresh) {
+  const el = document.getElementById('oggi-content');
+  if (refresh || !todayShift) {
+    el.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:20px 0;color:var(--t3)"><div class="spinner"></div> Caricamento...</div>';
+    await Promise.all([checkGeo(), fetchShift()]);
+  }
+
+  controllaCambioMese();
+  const arrivoSalvato = S.get('arrivo');
+  const arrivoOggi = arrivoSalvato && isToday(arrivoSalvato) ? arrivoSalvato : null;
+
+  let html = '';
+
+  // Status badge
+  const badges = {
+    at_work: '<span class="status-badge at-work"><span class="badge-dot"></span>Sei al lavoro</span>',
+    away: '<span class="status-badge not-work"><span class="badge-dot"></span>Non sei al lavoro</span>',
+    unknown: '<span class="status-badge unknown"><span class="badge-dot"></span>Posizione non rilevata</span>',
+    unavailable: '<span class="status-badge not-work"><span class="badge-dot"></span>GPS non disponibile</span>',
+  };
+  html += `<div style="margin-bottom:14px">${badges[geoStatus] || badges.unknown}</div>`;
+  html += `<div style="font-size:12px;color:var(--t3);font-family:var(--mono);margin-bottom:16px">${fmtDate(new Date())} · ${new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}</div>`;
+
+  // Setup warning
+  const cfg = getConfig();
+  if (!cfg.apiKey || !cfg.calendarId) {
+    html += '<div class="alert-banner">⚙️ <strong>Configurazione richiesta</strong><br>Tocca ⚙️ in alto per inserire API Key e Calendar ID del tuo Google Calendar.</div>';
+  }
+
+  // Shift card
+  if (todayShift) {
+    const durata = Math.round((todayShift.fine - todayShift.inizio) / 60000);
+    const durataH = Math.floor(durata / 60);
+    const durataM = durata % 60;
+    html += `<div class="shift-card">
+      <div class="shift-title">${todayShift.titolo}</div>
+      <div class="shift-times">
+        <span class="shift-time">${fmtTime(todayShift.inizio)}</span>
+        <span class="shift-arrow">→</span>
+        <span class="shift-time">${fmtTime(todayShift.fine)}</span>
+      </div>
+      <div class="shift-delta">Durata prevista: ${durataH > 0 ? durataH + 'h ' : ''}${durataM}m</div>
+    </div>`;
+  } else if (calendarError && calendarError !== 'setup') {
+    html += `<div class="alert-banner error">📅 ${calendarError}</div>`;
+  } else if (!cfg.apiKey) {
+    html += `<div class="card" style="border-style:dashed">
+      <div class="card-label">Turno di oggi</div>
+      <div style="color:var(--t3);font-size:13px;margin-top:4px">Configura il calendario per vedere i turni automaticamente</div>
+    </div>`;
+  }
+
+  // Arrival
+  if (arrivoOggi) {
+    html += `<div class="arrival-card">
+      <div class="arrival-info">
+        <div class="label">Arrivo registrato</div>
+        <div class="time">⏰ ${fmtTime(arrivoOggi)}</div>
+      </div>
+      <button class="btn-small" onclick="modificaArrivo()">Modifica</button>
+    </div>`;
+  }
+
+  // Main action button
+  if (!arrivoOggi) {
+    html += `<button class="btn-main arrival" onclick="registraArrivo()">
+      📍 Registra Arrivo
+    </button>`;
+  } else {
+    html += `<button class="btn-main departure" onclick="apriModalUscita()">
+      🚪 Registra Uscita e Calcola FLH
+    </button>`;
+  }
+
+  // Today's FLH if already logged
+  const logOggi = (S.get('log_corrente') || []).find(r => isToday(r.data));
+  if (logOggi) {
+    html += `<div class="divider"></div>
+    <div class="alert-banner success">✅ FLH registrato oggi: <strong>${logOggi.flhFmt}</strong> · Mese: <strong>${minToHM(S.get('mese_corrente') || 0)}</strong></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function registraArrivo() {
+  const ora = new Date().toISOString();
+  S.set('arrivo', ora);
+  renderOggi(false);
+}
+
+function modificaArrivo() {
+  const oraStr = prompt('Ora di arrivo (formato HH:MM):', fmtTime(S.get('arrivo') || new Date()));
+  if (!oraStr) return;
+  const [h, m] = oraStr.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) { alert('Formato non valido'); return; }
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  S.set('arrivo', d.toISOString());
+  renderOggi(false);
+}
+
+// ─────────────────────────────────────────────
+// MODAL: USCITA
+// ─────────────────────────────────────────────
+let mensaScelto = null;
+
+function apriModalUscita() {
+  mensaScelto = null;
+  renderModalUscita();
+  document.getElementById('modal-uscita').classList.add('open');
+}
+
+function chiudiModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function renderModalUscita() {
+  const arrivoISO = S.get('arrivo');
+  const uscitaOra = new Date();
+  const cfg = getConfig();
+
+  let flhInfo = null;
+  if (todayShift && arrivoISO) {
+    flhInfo = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
+  }
+
+  let html = '';
+
+  // Riepilogo orari
+  html += '<div class="flh-preview">';
+  html += `<div class="flh-preview-row"><span class="flh-preview-label">Arrivo</span><span class="flh-preview-val">${fmtTime(arrivoISO)}</span></div>`;
+  if (todayShift) {
+    html += `<div class="flh-preview-row"><span class="flh-preview-label">Turno</span><span class="flh-preview-val">${fmtTime(todayShift.inizio)} → ${fmtTime(todayShift.fine)}</span></div>`;
+  }
+  html += `<div class="flh-preview-row"><span class="flh-preview-label">Uscita ora</span><span class="flh-preview-val">${fmtTime(uscitaOra)}</span></div>`;
+  if (flhInfo) {
+    if (flhInfo.testa > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Ritardo arrivo</span><span class="flh-preview-val" style="color:var(--acc)">${flhInfo.testa}'</span></div>`;
+    if (flhInfo.coda > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Anticipo uscita</span><span class="flh-preview-val" style="color:var(--acc)">${flhInfo.coda}'</span></div>`;
+    html += `<div class="flh-preview-row" style="margin-top:4px"><span class="flh-preview-label" style="font-weight:600;color:var(--t1)">FLH oggi</span><span class="flh-preview-total">${flhInfo.fmt}</span></div>`;
+  } else {
+    html += `<div class="flh-preview-row"><span class="flh-preview-label">FLH</span><span style="color:var(--t3);font-size:12px">Configura calendario per calcolo automatico</span></div>`;
+  }
+  html += '</div>';
+
+  // Mensa
+  html += '<div class="section-title">Hai usato la mensa oggi?</div>';
+  html += `<div class="mensa-toggle">
+    <button class="mensa-btn ${mensaScelto === 'si' ? 'selected' : ''}" onclick="scegliMensa('si')">🍽️ Sì</button>
+    <button class="mensa-btn ${mensaScelto === 'no' ? 'selected' : ''}" onclick="scegliMensa('no')">❌ No</button>
+  </div>`;
+
+  if (mensaScelto === null) {
+    html += `<button class="btn-main disabled">Seleziona un'opzione</button>`;
+  } else {
+    html += `<button class="btn-main arrival" onclick="confermaUscita()">✅ Conferma e Salva</button>`;
+  }
+  html += `<button class="btn-secondary" onclick="chiudiModal('modal-uscita')">Annulla</button>`;
+
+  document.getElementById('modal-uscita-content').innerHTML = html;
+}
+
+function scegliMensa(v) {
+  mensaScelto = v;
+  renderModalUscita();
+}
+
+function confermaUscita() {
+  const arrivoISO = S.get('arrivo');
+  const uscitaOra = new Date();
+
+  let flhResult = { testa: 0, coda: 0, tot: 0, fmt: '0h 00m' };
+  if (todayShift && arrivoISO) {
+    flhResult = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
+  }
+
+  // Salva nel log
+  const riga = {
+    data: uscitaOra.toISOString(),
+    dateFmt: fmtDate(uscitaOra),
+    turno: todayShift ? todayShift.titolo : '—',
+    turnoInizio: todayShift ? fmtTime(todayShift.inizio) : '—',
+    turnoFine: todayShift ? fmtTime(todayShift.fine) : '—',
+    arrivo: fmtTime(arrivoISO),
+    uscita: fmtTime(uscitaOra),
+    mensa: mensaScelto,
+    flhTesta: flhResult.testa,
+    flhCoda: flhResult.coda,
+    flhTot: flhResult.tot,
+    flhFmt: flhResult.fmt,
+  };
+
+  const log = S.get('log_corrente') || [];
+  // Evita duplicati dello stesso giorno
+  const filtered = log.filter(r => !isToday(r.data));
+  filtered.push(riga);
+  S.set('log_corrente', filtered);
+
+  // Aggiorna totale mese
+  const vecchioTot = (S.get('mese_corrente') || 0);
+  // Se era già registrato oggi, sottrai il vecchio valore
+  const vecchioOggi = log.find(r => isToday(r.data));
+  const base = vecchioOggi ? vecchioTot - vecchioOggi.flhTot : vecchioTot;
+  S.set('mese_corrente', base + flhResult.tot);
+
+  // Reset arrivo
+  S.del('arrivo');
+
+  chiudiModal('modal-uscita');
+  mostraRisultato(riga);
+}
+
+function mostraRisultato(riga) {
+  const totMese = S.get('mese_corrente') || 0;
+  const residuo = Math.max(0, 600 - totMese);
+  let html = '';
+  html += '<div class="flh-preview">';
+  html += `<div class="flh-preview-row"><span class="flh-preview-label">Turno</span><span class="flh-preview-val">${riga.turno}</span></div>`;
+  html += `<div class="flh-preview-row"><span class="flh-preview-label">Presenza</span><span class="flh-preview-val">${riga.arrivo} → ${riga.uscita}</span></div>`;
+  html += `<div class="flh-preview-row"><span class="flh-preview-label">Mensa</span><span class="flh-preview-val">${riga.mensa === 'si' ? '✅ Sì' : '❌ No'}</span></div>`;
+  if (riga.flhTesta > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Ritardo arrivo</span><span class="flh-preview-val" style="color:var(--acc)">${riga.flhTesta}'</span></div>`;
+  if (riga.flhCoda > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Anticipo uscita</span><span class="flh-preview-val" style="color:var(--acc)">${riga.flhCoda}'</span></div>`;
+  html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--t1);font-weight:600">FLH oggi</span><span class="flh-preview-total">${riga.flhFmt}</span></div>`;
+  html += '</div>';
+
+  html += '<div class="card" style="display:flex;justify-content:space-between;align-items:center">';
+  html += `<div><div class="card-label">Mese usato</div><div class="card-value">${minToHM(totMese)}</div><div class="card-sub">di 10h 00m</div></div>`;
+  html += `<div style="text-align:right"><div class="card-label">Residuo</div><div class="card-value" style="font-size:22px;color:var(--green)">${minToHM(residuo)}</div></div>`;
+  html += '</div>';
+
+  html += `<button class="btn-main arrival" onclick="chiudiModal('modal-risultato');renderOggi(false)">OK</button>`;
+  document.getElementById('modal-risultato-content').innerHTML = html;
+  document.getElementById('modal-risultato').classList.add('open');
+}
+
+// ─────────────────────────────────────────────
+// RENDER: MESE
+// ─────────────────────────────────────────────
+function renderMese() {
+  const totMin = S.get('mese_corrente') || 0;
+  const log = S.get('log_corrente') || [];
+  const meseKey = getMeseKey();
+  const pct = Math.min(1, totMin / 600);
+  const R = 80, C = 90;
+  const circ = 2 * Math.PI * R;
+  const offset = circ * (1 - pct);
+
+  let html = `<div class="progress-wrap">
+    <div class="ring-container">
+      <svg width="${C*2}" height="${C*2}" viewBox="0 0 ${C*2} ${C*2}">
+        <circle class="ring-track" cx="${C}" cy="${C}" r="${R}" />
+        <circle class="ring-fill" cx="${C}" cy="${C}" r="${R}"
+          stroke-dasharray="${circ}" stroke-dashoffset="${offset}" />
+      </svg>
+      <div class="ring-center">
+        <div class="ring-value">${minToHM(totMin)}</div>
+        <div class="ring-label">${nomeMese(meseKey)}</div>
+      </div>
+    </div>
+    <div class="ring-limit">di 10h 00m disponibili · residuo <strong style="color:var(--green)">${minToHM(Math.max(0, 600 - totMin))}</strong></div>
+  </div><div style="padding:0 20px">`;
+
+  // Export
+  html += `<button class="export-btn" onclick="esportaMese()">
+    <span class="ico">📤</span>
+    <div>
+      <div>Esporta mese corrente (.txt)</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px">→ File · Personale · Desktop · FLH</div>
+    </div>
+  </button>`;
+
+  html += '<div class="divider"></div>';
+  html += `<div class="section-title">Giorni registrati (${log.length})</div>`;
+  html += '<div class="log-list">';
+
+  if (!log.length) {
+    html += '<div class="empty"><div class="ico">📋</div>Nessun giorno registrato questo mese</div>';
+  } else {
+    [...log].reverse().forEach(r => {
+      html += `<div class="log-item">
+        <div>
+          <div class="log-date">${r.dateFmt}</div>
+          <div class="log-turno">${r.turno}</div>
+          <div class="log-details">${r.turnoInizio}→${r.turnoFine} · presenza ${r.arrivo}→${r.uscita} · mensa ${r.mensa==='si'?'✓':'✗'}</div>
+        </div>
+        <div class="${r.flhTot > 0 ? 'log-flh' : 'log-flh zero'}">${r.flhFmt}</div>
+      </div>`;
+    });
+  }
+
+  html += '</div></div>';
+  document.getElementById('mese-content').innerHTML = html;
+}
+
+function esportaMese() {
+  const log = S.get('log_corrente') || [];
+  const totMin = S.get('mese_corrente') || 0;
+  const meseKey = getMeseKey();
+  let txt = `=== ${nomeMese(meseKey)} | Totale: ${totMin} min (${minToHM(totMin)}) | Residuo: ${minToHM(Math.max(0, 600 - totMin))} ===\n`;
+  txt += 'DATA|TURNO|T_INI|T_FIN|ARRIVO|USCITA|MENSA|TESTA|CODA|TOT_MIN|FLH\n';
+  log.forEach(r => {
+    txt += `${r.dateFmt}|${r.turno}|${r.turnoInizio}|${r.turnoFine}|${r.arrivo}|${r.uscita}|${r.mensa}|${r.flhTesta}|${r.flhCoda}|${r.flhTot}|${r.flhFmt}\n`;
+  });
+  const blob = new Blob([txt], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `FLH_${meseKey}.txt`;
+  a.click(); URL.revokeObjectURL(url);
+  setTimeout(() => alert('📂 File scaricato!\n\nSalvalo in:\nFile → Personale → Desktop → FLH\n(OneDrive personale)'), 400);
+}
+
+// ─────────────────────────────────────────────
+// RENDER: STORICO
+// ─────────────────────────────────────────────
+function renderStorico() {
+  const archivio = S.get('archivio') || [];
+  let html = '<div style="padding:0 20px">';
+  html += `<button class="export-btn" onclick="esportaStorico()">
+    <span class="ico">📤</span>
+    <div>
+      <div>Esporta tutto lo storico (.txt)</div>
+      <div style="font-size:10px;color:var(--t3);font-family:var(--mono);margin-top:2px">→ File · Personale · Desktop · FLH</div>
+    </div>
+  </button>`;
+  html += '<div class="divider"></div>';
+  html += `<div class="section-title">Mesi archiviati</div>`;
+
+  if (!archivio.length) {
+    html += '<div class="empty"><div class="ico">🗂️</div>Nessun mese archiviato ancora.<br>Il primo cambio mese archivierà i dati automaticamente.</div>';
+  } else {
+    archivio.forEach(a => {
+      const pct = Math.min(100, Math.round(a.totMin / 600 * 100));
+      html += `<div class="archive-item" onclick="mostraDettaglioMese('${a.mese}')" style="cursor:pointer">
+        <div>
+          <div class="archive-mese">${nomeMese(a.mese)}</div>
+          <div class="archive-giorni">${a.giorni.length} giorni · ${pct}% del limite mensile</div>
+        </div>
+        <div style="text-align:right">
+          <div class="archive-tot">${a.totFmt}</div>
+          <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">di 10h 00m</div>
+        </div>
+      </div>`;
+    });
+  }
+  html += '</div>';
+  document.getElementById('storico-content').innerHTML = html;
+}
+
+function mostraDettaglioMese(meseKey) {
+  const archivio = S.get('archivio') || [];
+  const mese = archivio.find(a => a.mese === meseKey);
+  if (!mese) return;
+  let txt = `${nomeMese(meseKey)}: ${mese.totFmt}\n\n`;
+  mese.giorni.forEach(r => {
+    txt += `${r.dateFmt} — ${r.turno} — ${r.arrivo}→${r.uscita} — FLH: ${r.flhFmt}\n`;
+  });
+  alert(txt);
+}
+
+function esportaStorico() {
+  const archivio = S.get('archivio') || [];
+  const log = S.get('log_corrente') || [];
+  const meseKey = getMeseKey();
+  const totMin = S.get('mese_corrente') || 0;
+  let txt = '';
+
+  // Mese corrente
+  txt += `=== ${nomeMese(meseKey)} | ${totMin} min (${minToHM(totMin)}) ===\n`;
+  log.forEach(r => { txt += `${r.dateFmt}|${r.turno}|${r.arrivo}→${r.uscita}|${r.flhFmt}\n`; });
+
+  // Archivio
+  archivio.forEach(a => {
+    txt += `\n=== ${nomeMese(a.mese)} | ${a.totMin} min (${a.totFmt}) ===\n`;
+    a.giorni.forEach(r => { txt += `${r.dateFmt}|${r.turno}|${r.arrivo}→${r.uscita}|${r.flhFmt}\n`; });
+  });
+
+  const blob = new Blob([txt], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'FLH_Storico.txt';
+  a.click(); URL.revokeObjectURL(url);
+  setTimeout(() => alert('📂 File scaricato!\n\nSalvalo in:\nFile → Personale → Desktop → FLH\n(OneDrive personale)'), 400);
+}
+
+// ─────────────────────────────────────────────
+// RENDER: SETUP
+// ─────────────────────────────────────────────
+function renderSetup() {
+  const cfg = getConfig();
+  document.getElementById('setup-content').innerHTML = `
+    <div style="padding:0 20px">
+    <div class="alert-banner" style="margin-bottom:20px">
+      <strong>💡 Come installare questa app</strong><br>
+      Salva il file <code>FLH_Tracker.html</code> in <strong>File → Personale → Desktop → FLH</strong> (OneDrive personale). Aprilo da lì in Safari → tocca Condividi → <strong>Aggiungi a schermata Home</strong>.
+    </div>
+
+    <div class="setup-group">
+      <div class="setup-label">Google API Key</div>
+      <input class="setup-input" id="cfg-apikey" type="text" placeholder="AIzaSy..." value="${cfg.apiKey}">
+      <div class="setup-hint">Google Cloud Console → Credenziali → Crea API Key → limita a "Calendar API". Guida: <em>console.cloud.google.com</em></div>
+    </div>
+
+    <div class="setup-group">
+      <div class="setup-label">Calendar ID del calendario "Turni"</div>
+      <input class="setup-input" id="cfg-calid" type="email" placeholder="abc123@group.calendar.google.com" value="${cfg.calendarId}">
+      <div class="setup-hint">Google Calendar → Impostazioni calendario "Turni" → "Integra calendario" → copia l'ID.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="setup-group">
+      <div class="setup-label">Raggio geofence (metri)</div>
+      <input class="setup-input" id="cfg-radius" type="number" value="${cfg.workRadius}" min="50" max="500">
+      <div class="setup-hint">Distanza massima da Via Asiago 10 per essere considerato "al lavoro". Default: 150m.</div>
+    </div>
+
+    <div class="setup-group">
+      <div class="setup-label">Posizione ufficio</div>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <input class="setup-input" id="cfg-lat" type="number" step="0.0001" placeholder="Lat" value="${cfg.workLat}" style="flex:1">
+        <input class="setup-input" id="cfg-lng" type="number" step="0.001" placeholder="Lng" value="${cfg.workLng}" style="flex:1">
+      </div>
+      <button class="btn-secondary" onclick="calibraPosizione()" style="margin-top:0">📍 Usa posizione attuale come ufficio</button>
+      <div class="setup-hint">Default: Via Asiago 10, Roma (41.9248, 12.4598). Usa "Calibra" dal tuo ufficio per maggiore precisione.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <button class="btn-main arrival" onclick="salvaConfig()">✅ Salva impostazioni</button>
+    <div style="height:16px"></div>
+    <div class="section-title" style="margin-top:8px">Zona pericolo</div>
+    <button class="export-btn" style="border-color:var(--red);color:#FCA5A5" onclick="resetDati()">
+      <span class="ico">🗑️</span><span>Elimina tutti i dati</span>
+    </button>
+    </div>`;
+}
+
+function salvaConfig() {
+  const cfg = {
+    apiKey: document.getElementById('cfg-apikey').value.trim(),
+    calendarId: document.getElementById('cfg-calid').value.trim(),
+    workRadius: parseInt(document.getElementById('cfg-radius').value) || 150,
+    workLat: parseFloat(document.getElementById('cfg-lat').value) || 41.9248,
+    workLng: parseFloat(document.getElementById('cfg-lng').value) || 12.4598,
+  };
+  S.set('config', cfg);
+  alert('✅ Impostazioni salvate!');
+  navTo('oggi');
+  renderOggi(true);
+}
+
+function calibraPosizione() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    document.getElementById('cfg-lat').value = pos.coords.latitude.toFixed(6);
+    document.getElementById('cfg-lng').value = pos.coords.longitude.toFixed(6);
+    alert('✅ Posizione attuale impostata come ufficio!');
+  }, () => alert('❌ Impossibile rilevare la posizione. Assicurati che il GPS sia attivo.'));
+}
+
+function resetDati() {
+  if (confirm('Eliminare TUTTI i dati FLH? Questa azione è irreversibile.')) {
+    ['config','arrivo','mese_attivo','mese_corrente','log_corrente','archivio'].forEach(k => S.del(k));
+    alert('Dati eliminati.');
+    location.reload();
+  }
+}
+
+// ─────────────────────────────────────────────
+// NAVIGATION
+// ─────────────────────────────────────────────
+const screens = ['oggi', 'mese', 'storico', 'setup'];
+
+function navTo(name) {
+  screens.forEach(s => {
+    document.getElementById('screen-' + s).classList.toggle('active', s === name);
+  });
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.screen === name);
+  });
+  // Update topbar title
+  const titles = { oggi: 'FLH TRACKER', mese: 'MESE CORRENTE', storico: 'STORICO', setup: 'IMPOSTAZIONI' };
+  document.getElementById('topbar-title').textContent = titles[name] || 'FLH TRACKER';
+
+  if (name === 'mese') renderMese();
+  if (name === 'storico') renderStorico();
+  if (name === 'setup') renderSetup();
+}
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => navTo(btn.dataset.screen));
+});
+
+document.getElementById('settings-btn').addEventListener('click', () => navTo('setup'));
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  todayShift = null;
+  renderOggi(true);
+});
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) chiudiModal(o.id); });
+});
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+controllaCambioMese();
+renderOggi(true);
+</script>
+</body>
+</html>
