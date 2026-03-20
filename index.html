@@ -6,6 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FLH">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>FLH Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
@@ -331,6 +334,8 @@ body {
 </div>
 
 <script>
+const APP_VERSION = '1.4';
+
 // ─────────────────────────────────────────────
 // STORAGE
 // ─────────────────────────────────────────────
@@ -433,6 +438,14 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function isArrivoValido(isoStr) {
+  if (!isoStr) return false;
+  const d = new Date(isoStr);
+  const now = new Date();
+  // Accetta arrivi nelle ultime 30 ore (copre turni notturni)
+  return (now - d) < 30 * 60 * 60 * 1000;
+}
+
 function isToday(isoStr) {
   if (!isoStr) return false;
   const d = new Date(isoStr);
@@ -533,12 +546,20 @@ async function fetchShift() {
     }
 
     // 2) Turno iniziato ieri che è già finito dopo mezzanotte (es. finiva alle 00:30, esco alle 01:00)
-    //    → mostro comunque quello perché è il turno di riferimento per il calcolo FLH
+    //    → solo se NON è già stato registrato nel log (cioè non ho ancora fatto l'uscita)
+    const logCorrente = S.get('log_corrente') || [];
     const overnightEnded = allEvents.find(e => {
       const start = new Date(e.start.dateTime);
       const end = new Date(e.end.dateTime);
       const endStr = end.getFullYear() + '-' + pad(end.getMonth()+1) + '-' + pad(end.getDate());
-      return e.start.dateTime.slice(0,10) === yesterdayStr && endStr === todayStr && now > end;
+      if (!(e.start.dateTime.slice(0,10) === yesterdayStr && endStr === todayStr && now > end)) return false;
+      // Controlla se questo turno è già stato registrato nel log
+      const giaRegistrato = logCorrente.some(r => {
+        const rData = new Date(r.data);
+        const rStr = rData.getFullYear() + '-' + pad(rData.getMonth()+1) + '-' + pad(rData.getDate());
+        return rStr === yesterdayStr || rStr === todayStr && r.turnoInizio === (pad(start.getHours()) + ':' + pad(start.getMinutes()));
+      });
+      return !giaRegistrato;
     });
     if (overnightEnded) {
       todayShift = { titolo: overnightEnded.summary || 'Turno', inizio: new Date(overnightEnded.start.dateTime), fine: new Date(overnightEnded.end.dateTime) };
@@ -574,7 +595,7 @@ async function renderOggi(refresh) {
 
   controllaCambioMese();
   const arrivoSalvato = S.get('arrivo');
-  const arrivoOggi = arrivoSalvato && isToday(arrivoSalvato) ? arrivoSalvato : null;
+  const arrivoOggi = arrivoSalvato && isArrivoValido(arrivoSalvato) ? arrivoSalvato : null;
 
   let html = '';
 
@@ -1084,9 +1105,67 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
 });
 
 // ─────────────────────────────────────────────
-// INIT
+// AUTO-UPDATE: controlla nuova versione da GitHub
 // ─────────────────────────────────────────────
+(async function checkUpdate() {
+  try {
+    // Aggiunge timestamp per bypassare cache
+    const url = window.location.pathname + '?v=' + Date.now() + window.location.hash;
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return;
+    const html = await resp.text();
+    // Cerca VERSION nel nuovo file
+    const newVerMatch = html.match(/const APP_VERSION = '([^']+)'/);
+    const curVerMatch = document.documentElement.outerHTML.match(/const APP_VERSION = '([^']+)'/);
+    const newVer = newVerMatch ? newVerMatch[1] : null;
+    const curVer = curVerMatch ? curVerMatch[1] : null;
+    if (newVer && curVer && newVer !== curVer) {
+      // Nuova versione disponibile — ricarica silenziosamente
+      window.location.reload(true);
+    }
+  } catch(e) { /* offline — ignora */ }
+})();
 controllaCambioMese();
+
+// Gestione azione da URL (es. ?action=arrivo o ?action=uscita)
+// Usato dalle iOS Shortcuts geofence per automazione
+(function handleUrlAction() {
+  const params = new URLSearchParams(window.location.search);
+  const action = params.get('action');
+  if (!action) return;
+
+  // Rimuovi il parametro action dall'URL senza ricaricare la pagina
+  const cleanUrl = window.location.pathname + window.location.hash;
+  window.history.replaceState(null, '', cleanUrl);
+
+  if (action === 'arrivo') {
+    // Registra arrivo automaticamente
+    const ora = new Date().toISOString();
+    S.set('arrivo', ora);
+    renderOggi(true).then(() => {
+      // Mostra conferma breve
+      const banner = document.createElement('div');
+      banner.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top)+60px);left:50%;transform:translateX(-50%);background:#10B981;color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;font-weight:600;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.3)';
+      banner.textContent = '✅ Arrivo registrato: ' + new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'});
+      document.body.appendChild(banner);
+      setTimeout(() => banner.remove(), 3000);
+    });
+
+  } else if (action === 'uscita') {
+    // Apri direttamente il modal uscita dopo aver caricato turno e posizione
+    renderOggi(true).then(() => {
+      const arrivoOggi = S.get('arrivo');
+      if (!arrivoOggi || !isArrivoValido(arrivoOggi)) {
+        // Se non c'è arrivo registrato, registra ora come arrivo e avvisa
+        S.set('arrivo', new Date().toISOString());
+        alert('⚠️ Nessun arrivo registrato oggi.\nHo impostato l\'ora attuale come arrivo — modificala nelle impostazioni se necessario.');
+        renderOggi(false);
+      }
+      setTimeout(() => apriModalUscita(), 500);
+    });
+  }
+})();
+
 renderOggi(true);
 </script>
 </body>
