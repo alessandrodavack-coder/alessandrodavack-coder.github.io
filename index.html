@@ -499,7 +499,15 @@ async function fetchShift() {
     const resp = await fetch(url);
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
-    const events = (data.items || []).filter(e => e.start && e.start.dateTime);
+    const events = (data.items || []).filter(e => {
+      if (!e.start || !e.start.dateTime) return false;
+      const start = new Date(e.start.dateTime);
+      const today = new Date();
+      // Solo eventi che INIZIANO oggi
+      return start.getDate() === today.getDate() &&
+             start.getMonth() === today.getMonth() &&
+             start.getFullYear() === today.getFullYear();
+    });
     if (!events.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = events[0];
     todayShift = {
