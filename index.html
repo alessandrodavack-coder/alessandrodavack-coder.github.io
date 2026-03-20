@@ -501,23 +501,21 @@ let calendarError = null;
 async function fetchShift() {
   const cfg = getConfig();
   calendarError = null;
-  if (!cfg.apiKey || !cfg.calendarId) {
-    calendarError = 'setup';
-    return null;
-  }
+  if (!cfg.apiKey || !cfg.calendarId) { calendarError = 'setup'; return null; }
   try {
-    const t = new Date();
-    const todayStr = t.getFullYear() + '-' +
-      String(t.getMonth() + 1).padStart(2,'0') + '-' +
-      String(t.getDate()).padStart(2,'0');
+    const now = new Date();
 
-    // Cerca anche il giorno precedente per turni notturni ancora attivi
-    const yesterday = new Date(t);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.getFullYear() + '-' +
-      String(yesterday.getMonth() + 1).padStart(2,'0') + '-' +
-      String(yesterday.getDate()).padStart(2,'0');
+    // Data di oggi e ieri in locale (YYYY-MM-DD)
+    const todayStr = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2,'0') + '-' +
+      String(now.getDate()).padStart(2,'0');
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    const yesterdayStr = yest.getFullYear() + '-' +
+      String(yest.getMonth() + 1).padStart(2,'0') + '-' +
+      String(yest.getDate()).padStart(2,'0');
 
+    // Chiedi eventi da ieri a fine oggi (copre turni notturni)
     const tMin = yesterdayStr + 'T00:00:00';
     const tMax = todayStr + 'T23:59:59';
     const calId = encodeURIComponent(cfg.calendarId);
@@ -525,48 +523,29 @@ async function fetchShift() {
     const resp = await fetch(url);
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
-    const today = new Date();
-    const todayStr = today.getFullYear() + '-' +
-      String(today.getMonth() + 1).padStart(2,'0') + '-' +
-      String(today.getDate()).padStart(2,'0');
-
-    const now = new Date();
-    const todayStr2 = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2,'0') + '-' +
-      String(now.getDate()).padStart(2,'0');
 
     const allEvents = (data.items || []).filter(e => e.start && e.start.dateTime);
 
-    // Prima controlla se c'è un turno di ieri ancora in corso (notturno)
-    const activeOvernight = allEvents.find(e => {
+    // 1) Turno di ieri ancora in corso adesso?
+    const overnight = allEvents.find(e => {
       const start = new Date(e.start.dateTime);
       const end = new Date(e.end.dateTime);
-      const startedYesterday = e.start.dateTime.slice(0,10) !== todayStr2;
-      return startedYesterday && now >= start && now <= end;
+      return e.start.dateTime.slice(0,10) === yesterdayStr && now >= start && now <= end;
     });
 
-    if (activeOvernight) {
-      // Turno notturno ancora attivo — mostra quello
-      const ev = activeOvernight;
-      todayShift = {
-        titolo: ev.summary || 'Turno',
-        inizio: new Date(ev.start.dateTime),
-        fine: new Date(ev.end.dateTime)
-      };
+    if (overnight) {
+      todayShift = { titolo: overnight.summary || 'Turno', inizio: new Date(overnight.start.dateTime), fine: new Date(overnight.end.dateTime) };
       return todayShift;
     }
 
-    // Altrimenti prendi il primo turno che inizia oggi
-    const events = allEvents.filter(e => e.start.dateTime.slice(0, 10) === todayStr2);
-    if (!events.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
-    const ev = events[0];
-    todayShift = {
-      titolo: ev.summary || 'Turno',
-      inizio: new Date(ev.start.dateTime),
-      fine: new Date(ev.end.dateTime)
-    };
+    // 2) Primo turno che inizia oggi
+    const todayEvents = allEvents.filter(e => e.start.dateTime.slice(0,10) === todayStr);
+    if (!todayEvents.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
+    const ev = todayEvents[0];
+    todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime) };
     return todayShift;
-  } catch (e) {
+
+  } catch(e) {
     calendarError = 'Errore di rete — riprova';
     return null;
   }
