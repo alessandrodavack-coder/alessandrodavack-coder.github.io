@@ -340,7 +340,7 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '2.0';
+const APP_VERSION = '2.1';
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -410,6 +410,7 @@ async function ghLoad() {
   if (d.mese_corrente !== undefined) S.set('mese_corrente', d.mese_corrente);
   if (d.log_corrente) S.set('log_corrente', d.log_corrente);
   if (d.archivio) S.set('archivio', d.archivio);
+  if (d.ultimo_turno) S.set('ultimo_turno', d.ultimo_turno);
   return true;
 }
 
@@ -422,6 +423,7 @@ async function ghSave() {
     mese_corrente: S.get('mese_corrente') || 0,
     log_corrente: S.get('log_corrente') || [],
     archivio: S.get('archivio') || [],
+    ultimo_turno: S.get('ultimo_turno') || null,
     aggiornato: new Date().toISOString(),
   };
   const sha = S.get('gh_sha');
@@ -621,16 +623,32 @@ async function fetchShift() {
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
 
-    const allEvents = (data.items || []).filter(e => e.start && e.start.dateTime);
+    const allEvents = (data.items || []).filter(e => {
+      if (!e.start || !e.start.dateTime) return false; // scarta eventi tutto-il-giorno
+      // Scarta turni di riposo/assenza (potrebbero avere orario nel calendario)
+      const titolo = (e.summary || '').toUpperCase().trim();
+      const daIgnorare = ['NL','RIPOSO','RO','HP','FS','RRI','RN','FERIE','PERMESSO','MALATTIA'];
+      return !daIgnorare.includes(titolo);
+    });
     const logCorrente = S.get('log_corrente') || [];
 
     // Helper: questo turno è già nel log? (controlla turnoInizio nelle ultime 48h)
+    // Controlla sia il log completo che il registro separato dell'ultimo turno
     const giaLoggato = startDate => {
       const ini = pad(startDate.getHours()) + ':' + pad(startDate.getMinutes());
-      return logCorrente.some(r => {
+      // 1) Controlla nel log completo
+      const inLog = logCorrente.some(r => {
         if (r.turnoInizio !== ini) return false;
         return (now - new Date(r.data)) < 48 * 60 * 60 * 1000;
       });
+      if (inLog) return true;
+      // 2) Fallback: controlla l'ultimo turno salvato separatamente
+      //    (resiste a cache clear e GitHub stale)
+      const u = S.get('ultimo_turno');
+      if (u && u.ini === ini && u.data) {
+        return (now - new Date(u.data)) < 48 * 60 * 60 * 1000;
+      }
+      return false;
     };
 
     // ── CASO 1: turno di ieri ancora IN CORSO adesso ──
@@ -949,6 +967,14 @@ function confermaUscita() {
   // Reset
   S.del('arrivo');
   uscitaOverrideGlobal = null;
+
+  // Salva separatamente l'ultimo turno registrato — usato da giaLoggato
+  // come fallback se il log principale viene perso (cache cleared, GitHub stale)
+  S.set('ultimo_turno', {
+    ini: riga.turnoInizio,
+    fine: riga.turnoFine,
+    data: riga.data,
+  });
 
   chiudiModal('modal-uscita');
   mostraRisultato(riga);
@@ -1371,7 +1397,7 @@ function calibraPosizione() {
 
 function resetDati() {
   if (confirm('Eliminare TUTTI i dati FLH? Questa azione è irreversibile.')) {
-    ['config','arrivo','mese_attivo','mese_corrente','log_corrente','archivio'].forEach(k => S.del(k));
+    ['config','arrivo','mese_attivo','mese_corrente','log_corrente','archivio','ultimo_turno','gh_sha'].forEach(k => S.del(k));
     alert('Dati eliminati.');
     location.reload();
   }
