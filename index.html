@@ -340,7 +340,7 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '1.9';
+const APP_VERSION = '2.0';
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -612,7 +612,6 @@ async function fetchShift() {
     const yest = new Date(now); yest.setDate(yest.getDate()-1);
     const yesterdayStr = yest.getFullYear() + '-' + pad(yest.getMonth()+1) + '-' + pad(yest.getDate());
 
-    // Google Calendar vuole RFC3339 in UTC — inizio ieri / fine oggi
     const tMin = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0).toISOString();
     const tMax = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
 
@@ -623,52 +622,51 @@ async function fetchShift() {
     if (data.error) { calendarError = data.error.message; return null; }
 
     const allEvents = (data.items || []).filter(e => e.start && e.start.dateTime);
+    const logCorrente = S.get('log_corrente') || [];
 
-    // 1) Turno iniziato ieri ancora in corso adesso?
-    const overnight = allEvents.find(e => {
-      const start = new Date(e.start.dateTime);
+    // Helper: questo turno è già nel log? (controlla turnoInizio nelle ultime 48h)
+    const giaLoggato = startDate => {
+      const ini = pad(startDate.getHours()) + ':' + pad(startDate.getMinutes());
+      return logCorrente.some(r => {
+        if (r.turnoInizio !== ini) return false;
+        return (now - new Date(r.data)) < 48 * 60 * 60 * 1000;
+      });
+    };
+
+    // ── CASO 1: turno di ieri ancora IN CORSO adesso ──
+    const inCorso = allEvents.find(e => {
+      if (e.start.dateTime.slice(0,10) !== yesterdayStr) return false;
       const end = new Date(e.end.dateTime);
-      return e.start.dateTime.slice(0,10) === yesterdayStr && now >= start && now <= end;
+      return now <= end;
     });
-    if (overnight) {
-      todayShift = { titolo: overnight.summary || 'Turno', inizio: new Date(overnight.start.dateTime), fine: new Date(overnight.end.dateTime) };
+    if (inCorso) {
+      todayShift = { titolo: inCorso.summary || 'Turno', inizio: new Date(inCorso.start.dateTime), fine: new Date(inCorso.end.dateTime) };
       return todayShift;
     }
 
-    // 2) Turno iniziato ieri che è già finito dopo mezzanotte
-    //    → solo se NON è già stato registrato nel log (controllo per data + orario)
-    const logCorrente = S.get('log_corrente') || [];
-    const overnightEnded = allEvents.find(e => {
-      const start = new Date(e.start.dateTime);
+    // ── CASO 2: turno notturno di ieri, finito OGGI dopo mezzanotte,
+    //            uscita non ancora registrata ──
+    const notturnoFinito = allEvents.find(e => {
+      if (e.start.dateTime.slice(0,10) !== yesterdayStr) return false;
       const end = new Date(e.end.dateTime);
       const endStr = end.getFullYear() + '-' + pad(end.getMonth()+1) + '-' + pad(end.getDate());
-      if (!(e.start.dateTime.slice(0,10) === yesterdayStr && endStr === todayStr && now > end)) return false;
-      const turnoIniStr = pad(start.getHours()) + ':' + pad(start.getMinutes());
-      // Già registrato = riga nel log con stesso turnoInizio E data ieri o oggi
-      const giaRegistrato = logCorrente.some(r => {
-        if (r.turnoInizio !== turnoIniStr) return false;
-        const rDate = new Date(r.data);
-        const rStr = rDate.getFullYear() + '-' + pad(rDate.getMonth()+1) + '-' + pad(rDate.getDate());
-        return rStr === yesterdayStr || rStr === todayStr;
-      });
-      return !giaRegistrato;
+      if (endStr !== todayStr) return false; // finisce ieri → non è notturno
+      if (now <= end) return false;          // ancora in corso → già caso 1
+      return !giaLoggato(new Date(e.start.dateTime));
     });
-    if (overnightEnded) {
-      todayShift = { titolo: overnightEnded.summary || 'Turno', inizio: new Date(overnightEnded.start.dateTime), fine: new Date(overnightEnded.end.dateTime) };
+    if (notturnoFinito) {
+      todayShift = { titolo: notturnoFinito.summary || 'Turno', inizio: new Date(notturnoFinito.start.dateTime), fine: new Date(notturnoFinito.end.dateTime) };
       return todayShift;
     }
 
-    // 3) Primo turno che inizia oggi NON ancora registrato nel log
-    const todayEvents = allEvents.filter(e => {
+    // ── CASO 3: turno che INIZIA oggi, non ancora loggato ──
+    const turniOggi = allEvents.filter(e => {
       const start = new Date(e.start.dateTime);
       const localDate = start.getFullYear() + '-' + pad(start.getMonth()+1) + '-' + pad(start.getDate());
-      if (localDate !== todayStr) return false;
-      // Salta turni già registrati
-      const turnoIniStr = pad(start.getHours()) + ':' + pad(start.getMinutes());
-      return !logCorrente.some(r => r.turnoInizio === turnoIniStr && isToday(r.data));
+      return localDate === todayStr && !giaLoggato(start);
     });
-    if (!todayEvents.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
-    const ev = todayEvents[0];
+    if (!turniOggi.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
+    const ev = turniOggi[0];
     todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime) };
     return todayShift;
 
