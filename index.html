@@ -340,7 +340,7 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '2.2';
+const APP_VERSION = '2.7';
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -552,23 +552,23 @@ function calcolaFLH(arrivo, uscita, turnoInizio, turnoFine) {
   let testa = a > ti ? Math.round((a - ti) / 60000) : 0;
   // FLH coda: uscito PRIMA della fine turno
   let coda  = u < tf ? Math.round((tf - u) / 60000) : 0;
-  // Straordinario: uscito DOPO la fine turno
+  // Straordinario: uscito DOPO la fine turno — compensa il FLH testa
   const straordinario = u > tf ? Math.round((u - tf) / 60000) : 0;
 
-  // Applica soglia 15 min sui valori lordi (prima della compensazione)
-  // Se il valore lordo è < 15min, non conta — azzeralo prima di compensare
-  if (testa < 15) testa = 0;
-  if (coda < 15) coda = 0;
-
-  // Lo straordinario compensa il FLH testa (non può andare sotto zero)
+  // Straordinario scala il FLH testa (non può andare sotto zero)
   testa = Math.max(0, testa - straordinario);
+
+  // Applica soglia 15 min DOPO la compensazione
+  // es: testa 20 - straord 10 = netta 10 → sotto soglia → 0
+  if (testa < 15) testa = 0;
+  if (coda  < 15) coda  = 0;
 
   let tot = testa + coda;
   if (tot > 120) { // max 2h
     const r = 120 / (testa + coda || 1);
     testa = Math.round(testa * r);
-    coda = 120 - testa;
-    tot = 120;
+    coda  = 120 - testa;
+    tot   = 120;
   }
 
   return { testa, coda, straordinario, tot, fmt: minToHM(tot) };
@@ -624,10 +624,14 @@ async function fetchShift() {
 
     const allEvents = (data.items || []).filter(e => {
       if (!e.start || !e.start.dateTime) return false; // scarta eventi tutto-il-giorno
-      // Scarta turni di riposo/assenza (potrebbero avere orario nel calendario)
+      // Scarta SOLO titoli che sono esclusivamente una sigla di riposo/assenza
+      // MNL/MRIP come PREFISSO (es. "MNL 8.30") vengono inclusi — hanno orario valido
       const titolo = (e.summary || '').toUpperCase().trim();
-      const daIgnorare = ['NL','RIPOSO','RO','HP','FS','RRI','RN','FERIE','PERMESSO','MALATTIA'];
-      return !daIgnorare.includes(titolo);
+      // Scarta solo pure sigle di riposo (tutto il giorno fuori)
+      const soloRiposo = ['NL','RIPOSO','RO','HP','FS','RRI','RN','FERIE','PERMESSO','MALATTIA'];
+      if (soloRiposo.includes(titolo)) return false;
+      // MNL/MRIP come prefisso → presente ma FLH=0, includi comunque il turno
+      return true;
     });
     const logCorrente = S.get('log_corrente') || [];
 
@@ -657,7 +661,8 @@ async function fetchShift() {
       return now <= end;
     });
     if (inCorso) {
-      todayShift = { titolo: inCorso.summary || 'Turno', inizio: new Date(inCorso.start.dateTime), fine: new Date(inCorso.end.dateTime) };
+      const titoloInCorso = (inCorso.summary || '').toUpperCase().trim();
+      todayShift = { titolo: inCorso.summary || 'Turno', inizio: new Date(inCorso.start.dateTime), fine: new Date(inCorso.end.dateTime), flhDisabilitato: titoloInCorso.startsWith('MNL') || titoloInCorso.startsWith('MRIP') };
       return todayShift;
     }
 
@@ -672,7 +677,8 @@ async function fetchShift() {
       return !giaLoggato(new Date(e.start.dateTime));
     });
     if (notturnoFinito) {
-      todayShift = { titolo: notturnoFinito.summary || 'Turno', inizio: new Date(notturnoFinito.start.dateTime), fine: new Date(notturnoFinito.end.dateTime) };
+      const titoloNott = (notturnoFinito.summary || '').toUpperCase().trim();
+      todayShift = { titolo: notturnoFinito.summary || 'Turno', inizio: new Date(notturnoFinito.start.dateTime), fine: new Date(notturnoFinito.end.dateTime), flhDisabilitato: titoloNott.startsWith('MNL') || titoloNott.startsWith('MRIP') };
       return todayShift;
     }
 
@@ -684,7 +690,9 @@ async function fetchShift() {
     });
     if (!turniOggi.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = turniOggi[0];
-    todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime) };
+    const titoloEv = (ev.summary || '').toUpperCase().trim();
+    const flhDisabilitato = titoloEv.startsWith('MNL') || titoloEv.startsWith('MRIP');
+    todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime), flhDisabilitato };
     return todayShift;
 
   } catch(e) {
@@ -766,7 +774,7 @@ async function renderOggi(refresh) {
         <span class="shift-arrow">→</span>
         <span class="shift-time">${fmtTime(todayShift.fine)}</span>
       </div>
-      <div class="shift-delta">Durata prevista: ${durataH > 0 ? durataH + 'h ' : ''}${durataM}m</div>
+      <div class="shift-delta">Durata prevista: ${durataH > 0 ? durataH + 'h ' : ''}${durataM}m${todayShift.flhDisabilitato ? ' &nbsp;·&nbsp; <span style="color:var(--yellow);font-size:11px">⚠️ FLH non applicabile (MNL/MRIP)</span>' : ''}</div>
     </div>`;
   } else if (calendarError && calendarError !== 'setup') {
     html += `<div class="alert-banner error">📅 ${calendarError}</div>`;
@@ -881,7 +889,9 @@ function renderModalUscita(uscitaOverride) {
 
   let flhInfo = null;
   if (todayShift && arrivoISO) {
+    // FMH usa la stessa logica di calcolo, ma non conta nel totale mensile
     flhInfo = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
+    if (todayShift.flhDisabilitato) flhInfo.disabilitato = true;
   }
 
   let html = '';
@@ -897,7 +907,12 @@ function renderModalUscita(uscitaOverride) {
     if (flhInfo.straordinario > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Straordinario</span><span class="flh-preview-val" style="color:var(--green)">-${flhInfo.straordinario}' compensati</span></div>`;
     if (flhInfo.testa > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Ritardo arrivo</span><span class="flh-preview-val" style="color:var(--acc)">${flhInfo.testa}'</span></div>`;
     if (flhInfo.coda > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Anticipo uscita</span><span class="flh-preview-val" style="color:var(--acc)">${flhInfo.coda}'</span></div>`;
-    html += `<div class="flh-preview-row" style="margin-top:4px"><span class="flh-preview-label" style="font-weight:600;color:var(--t1)">FLH oggi</span><span class="flh-preview-total">${flhInfo.fmt}</span></div>`;
+    if (flhInfo.disabilitato) {
+      html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--yellow)">⚠️ Turno MNL/MRIP — FMH</span><span style="font-size:11px;color:var(--t3)">Non conta nel totale mensile</span></div>`;
+      html += `<div class="flh-preview-row" style="margin-top:4px"><span class="flh-preview-label" style="font-weight:600;color:var(--t1)">FMH oggi</span><span class="flh-preview-total">${flhInfo.fmt}</span></div>`;
+    } else {
+      html += `<div class="flh-preview-row" style="margin-top:4px"><span class="flh-preview-label" style="font-weight:600;color:var(--t1)">FLH oggi</span><span class="flh-preview-total">${flhInfo.fmt}</span></div>`;
+    }
   } else {
     html += `<div class="flh-preview-row"><span class="flh-preview-label">FLH</span><span style="color:var(--t3);font-size:12px">Configura calendario per calcolo automatico</span></div>`;
   }
@@ -930,7 +945,10 @@ function confermaUscita() {
   const uscitaOra = uscitaOverrideGlobal || new Date(); // Fix BUG 1
 
   let flhResult = { testa: 0, coda: 0, straordinario: 0, tot: 0, fmt: '0h 00m' };
+  const isFMH = todayShift && todayShift.flhDisabilitato;
   if (todayShift && arrivoISO) {
+    // Per MNL/MRIP si calcola il FMH normalmente (stessa logica)
+    // ma NON viene aggiunto al totale mensile FLH
     flhResult = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
   }
 
@@ -949,6 +967,7 @@ function confermaUscita() {
     flhStraordinario: flhResult.straordinario || 0,
     flhTot: flhResult.tot,
     flhFmt: flhResult.fmt,
+    isFMH: isFMH || false,
   };
 
   const log = S.get('log_corrente') || [];
@@ -957,11 +976,12 @@ function confermaUscita() {
   filtered.push(riga);
   S.set('log_corrente', filtered);
 
-  // Aggiorna totale mese
+  // Aggiorna totale mese — FMH (MNL/MRIP) NON si accumula nel mensile FLH
   const vecchioTot = S.get('mese_corrente') || 0;
   const vecchioConTurno = log.find(r => r.turnoInizio === riga.turnoInizio);
-  const base = vecchioConTurno ? vecchioTot - vecchioConTurno.flhTot : vecchioTot;
-  S.set('mese_corrente', Math.max(0, base + flhResult.tot));
+  const vecchioFlhTot = vecchioConTurno ? (vecchioConTurno.isFMH ? 0 : vecchioConTurno.flhTot) : 0;
+  const base = vecchioTot - vecchioFlhTot;
+  S.set('mese_corrente', Math.max(0, base + (isFMH ? 0 : flhResult.tot)));
 
   // Reset
   S.del('arrivo');
@@ -994,7 +1014,12 @@ function mostraRisultato(riga) {
   if (riga.flhStraordinario > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Straordinario</span><span class="flh-preview-val" style="color:var(--green)">-${riga.flhStraordinario}' compensati</span></div>`;
   if (riga.flhTesta > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Ritardo arrivo</span><span class="flh-preview-val" style="color:var(--acc)">${riga.flhTesta}'</span></div>`;
   if (riga.flhCoda > 0) html += `<div class="flh-preview-row"><span class="flh-preview-label">Anticipo uscita</span><span class="flh-preview-val" style="color:var(--acc)">${riga.flhCoda}'</span></div>`;
-  html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--t1);font-weight:600">FLH oggi</span><span class="flh-preview-total">${riga.flhFmt}</span></div>`;
+  if (riga.isFMH) {
+    html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--yellow)">⚠️ Turno MNL/MRIP</span><span style="font-size:11px;color:var(--t3)">FMH — non conta nel mensile</span></div>`;
+    html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--t1);font-weight:600">FMH oggi</span><span class="flh-preview-total" style="color:var(--yellow)">${riga.flhFmt}</span></div>`;
+  } else {
+    html += `<div class="flh-preview-row"><span class="flh-preview-label" style="color:var(--t1);font-weight:600">FLH oggi</span><span class="flh-preview-total">${riga.flhFmt}</span></div>`;
+  }
   html += '</div>';
 
   html += '<div class="card" style="display:flex;justify-content:space-between;align-items:center">';
@@ -1059,7 +1084,7 @@ function renderMese() {
           <div class="log-details">${r.turnoInizio}→${r.turnoFine} · presenza ${r.arrivo}→${r.uscita} · mensa ${r.mensa==='si'?'✓':'✗'}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
-          <div class="${r.flhTot > 0 ? 'log-flh' : 'log-flh zero'}">${r.flhFmt}</div>
+          <div class="${r.isFMH ? 'log-flh' : r.flhTot > 0 ? 'log-flh' : 'log-flh zero'}" style="${r.isFMH ? 'color:var(--yellow)' : ''}">${r.isFMH ? 'FMH ' : ''}${r.flhFmt}</div>
           <button class="btn-small" onclick="apriModificaGiorno(${idx})">✏️</button>
         </div>
       </div>`;
