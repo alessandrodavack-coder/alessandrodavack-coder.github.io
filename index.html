@@ -324,8 +324,14 @@ body {
   </div>
 </div>
 
-<!-- MODAL: RISULTATO FLH -->
-<div class="modal-overlay" id="modal-risultato">
+<!-- MODAL: MODIFICA GIORNO -->
+<div class="modal-overlay" id="modal-modifica">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ Modifica giorno</div>
+    <div id="modal-modifica-content"></div>
+  </div>
+</div>
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">✅ FLH Registrato</div>
@@ -334,7 +340,7 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.9';
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -466,23 +472,19 @@ function controllaCambioMese() {
   const meseAttivo = S.get('mese_attivo');
   const meseOggi = getMeseKey();
   if (meseAttivo && meseAttivo !== meseOggi) {
-    // Archivia mese precedente
     const totMin = S.get('mese_corrente') || 0;
     const log = S.get('log_corrente') || [];
     const archivio = S.get('archivio') || [];
-    archivio.unshift({
-      mese: meseAttivo,
-      totMin: totMin,
-      totFmt: minToHM(totMin),
-      giorni: log
-    });
+    archivio.unshift({ mese: meseAttivo, totMin, totFmt: minToHM(totMin), giorni: log });
     S.set('archivio', archivio);
-    // Reset
     S.set('mese_corrente', 0);
     S.set('log_corrente', []);
     S.del('arrivo');
+    S.set('mese_attivo', meseOggi);
+    ghSave(); // Fix BUG 4: sincronizza archivio su GitHub
+  } else {
+    S.set('mese_attivo', meseOggi);
   }
-  S.set('mese_attivo', meseOggi);
 }
 
 // ─────────────────────────────────────────────
@@ -542,23 +544,25 @@ function isToday(isoStr) {
 // FLH CALCULATION
 // ─────────────────────────────────────────────
 function calcolaFLH(arrivo, uscita, turnoInizio, turnoFine) {
-  const a = new Date(arrivo);
-  const u = new Date(uscita);
-  const ti = new Date(turnoInizio);
-  const tf = new Date(turnoFine);
+  const a = new Date(arrivo), u = new Date(uscita);
+  const ti = new Date(turnoInizio), tf = new Date(turnoFine);
 
   // FLH testa: arrivato DOPO l'inizio turno
   let testa = a > ti ? Math.round((a - ti) / 60000) : 0;
   // FLH coda: uscito PRIMA della fine turno
-  let coda = u < tf ? Math.round((tf - u) / 60000) : 0;
-  // Straordinario: uscito DOPO la fine turno — compensa il FLH testa
+  let coda  = u < tf ? Math.round((tf - u) / 60000) : 0;
+  // Straordinario: uscito DOPO la fine turno
   const straordinario = u > tf ? Math.round((u - tf) / 60000) : 0;
 
-  // Lo straordinario scala il FLH testa (non può andare sotto zero)
+  // Applica soglia 15 min sui valori lordi (prima della compensazione)
+  // Se il valore lordo è < 15min, non conta — azzeralo prima di compensare
+  if (testa < 15) testa = 0;
+  if (coda < 15) coda = 0;
+
+  // Lo straordinario compensa il FLH testa (non può andare sotto zero)
   testa = Math.max(0, testa - straordinario);
 
   let tot = testa + coda;
-  if (tot < 15) { tot = 0; testa = 0; coda = 0; } // sotto 15 min non conta
   if (tot > 120) { // max 2h
     const r = 120 / (testa + coda || 1);
     testa = Math.round(testa * r);
@@ -631,19 +635,21 @@ async function fetchShift() {
       return todayShift;
     }
 
-    // 2) Turno iniziato ieri che è già finito dopo mezzanotte (es. finiva alle 00:30, esco alle 01:00)
-    //    → solo se NON è già stato registrato nel log (cioè non ho ancora fatto l'uscita)
+    // 2) Turno iniziato ieri che è già finito dopo mezzanotte
+    //    → solo se NON è già stato registrato nel log (controllo per data + orario)
     const logCorrente = S.get('log_corrente') || [];
     const overnightEnded = allEvents.find(e => {
       const start = new Date(e.start.dateTime);
       const end = new Date(e.end.dateTime);
       const endStr = end.getFullYear() + '-' + pad(end.getMonth()+1) + '-' + pad(end.getDate());
       if (!(e.start.dateTime.slice(0,10) === yesterdayStr && endStr === todayStr && now > end)) return false;
-      // Controlla se questo turno è già stato registrato nel log
+      const turnoIniStr = pad(start.getHours()) + ':' + pad(start.getMinutes());
+      // Già registrato = riga nel log con stesso turnoInizio E data ieri o oggi
       const giaRegistrato = logCorrente.some(r => {
-        const rData = new Date(r.data);
-        const rStr = rData.getFullYear() + '-' + pad(rData.getMonth()+1) + '-' + pad(rData.getDate());
-        return rStr === yesterdayStr || rStr === todayStr && r.turnoInizio === (pad(start.getHours()) + ':' + pad(start.getMinutes()));
+        if (r.turnoInizio !== turnoIniStr) return false;
+        const rDate = new Date(r.data);
+        const rStr = rDate.getFullYear() + '-' + pad(rDate.getMonth()+1) + '-' + pad(rDate.getDate());
+        return rStr === yesterdayStr || rStr === todayStr;
       });
       return !giaRegistrato;
     });
@@ -652,11 +658,14 @@ async function fetchShift() {
       return todayShift;
     }
 
-    // 3) Primo turno che inizia oggi (confronto data locale)
+    // 3) Primo turno che inizia oggi NON ancora registrato nel log
     const todayEvents = allEvents.filter(e => {
       const start = new Date(e.start.dateTime);
       const localDate = start.getFullYear() + '-' + pad(start.getMonth()+1) + '-' + pad(start.getDate());
-      return localDate === todayStr;
+      if (localDate !== todayStr) return false;
+      // Salta turni già registrati
+      const turnoIniStr = pad(start.getHours()) + ':' + pad(start.getMinutes());
+      return !logCorrente.some(r => r.turnoInizio === turnoIniStr && isToday(r.data));
     });
     if (!todayEvents.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = todayEvents[0];
@@ -683,6 +692,26 @@ async function renderOggi(refresh) {
   const arrivoSalvato = S.get('arrivo');
   const arrivoOggi = arrivoSalvato && isArrivoValido(arrivoSalvato) ? arrivoSalvato : null;
 
+  // Controlla mancata uscita: arrivo salvato di più di 16 ore fa senza uscita registrata
+  const logCorrente = S.get('log_corrente') || [];
+  let mancataUscita = false;
+  if (arrivoSalvato && !isArrivoValido(arrivoSalvato)) {
+    // Arrivo vecchio (>30h) senza uscita corrispondente nel log
+    const arrivoD = new Date(arrivoSalvato);
+    const pad = n => String(n).padStart(2,'0');
+    const arrivoData = arrivoD.getFullYear() + '-' + pad(arrivoD.getMonth()+1) + '-' + pad(arrivoD.getDate());
+    const giaUscito = logCorrente.some(r => {
+      const rD = new Date(r.data);
+      const rData = rD.getFullYear() + '-' + pad(rD.getMonth()+1) + '-' + pad(rD.getDate());
+      return rData === arrivoData;
+    });
+    if (!giaUscito) {
+      mancataUscita = true;
+      // Pulisce l'arrivo orfano
+      S.del('arrivo');
+    }
+  }
+
   let html = '';
 
   // Status badge
@@ -694,6 +723,15 @@ async function renderOggi(refresh) {
   };
   html += `<div style="margin-bottom:14px">${badges[geoStatus] || badges.unknown}</div>`;
   html += `<div style="font-size:12px;color:var(--t3);font-family:var(--mono);margin-bottom:16px">${fmtDate(new Date())} · ${new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}</div>`;
+
+  // Alert mancata uscita
+  if (mancataUscita) {
+    html += `<div class="alert-banner warn" style="border-left-color:var(--yellow);margin-bottom:12px">
+      ⚠️ <strong>Mancata uscita rilevata</strong><br>
+      Hai un arrivo registrato senza uscita corrispondente. Vuoi registrarla ora?
+      <br><button class="btn-small" style="margin-top:8px" onclick="apriModalUscitaManuale()">Registra uscita mancante</button>
+    </div>`;
+  }
 
   // Setup warning
   const cfg = getConfig();
@@ -746,11 +784,13 @@ async function renderOggi(refresh) {
     </button>`;
   }
 
-  // Today's FLH if already logged
-  const logOggi = (S.get('log_corrente') || []).find(r => isToday(r.data));
+  // FLH già registrato oggi: cerca per turno corrente se disponibile, altrimenti per data
+  const logOggi = todayShift
+    ? (S.get('log_corrente') || []).find(r => r.turnoInizio === fmtTime(todayShift.inizio))
+    : (S.get('log_corrente') || []).find(r => isToday(r.data));
   if (logOggi) {
     html += `<div class="divider"></div>
-    <div class="alert-banner success">✅ FLH registrato oggi: <strong>${logOggi.flhFmt}</strong> · Mese: <strong>${minToHM(S.get('mese_corrente') || 0)}</strong></div>`;
+    <div class="alert-banner success">✅ FLH registrato: <strong>${logOggi.flhFmt}</strong> · Mese: <strong>${minToHM(S.get('mese_corrente') || 0)}</strong></div>`;
   }
 
   el.innerHTML = html;
@@ -763,13 +803,15 @@ function registraArrivo() {
 }
 
 function modificaArrivo() {
-  const oraStr = prompt('Ora di arrivo (formato HH:MM):', fmtTime(S.get('arrivo') || new Date()));
+  const arrivoAttuale = S.get('arrivo');
+  const oraStr = prompt('Ora di arrivo (formato HH:MM):', fmtTime(arrivoAttuale || new Date()));
   if (!oraStr) return;
   const [h, m] = oraStr.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) { alert('Formato non valido'); return; }
-  const d = new Date();
-  d.setHours(h, m, 0, 0);
-  S.set('arrivo', d.toISOString());
+  // Fix BUG 7: usa la data dell'arrivo salvato come base, non new Date()
+  const base = arrivoAttuale ? new Date(arrivoAttuale) : new Date();
+  base.setHours(h, m, 0, 0);
+  S.set('arrivo', base.toISOString());
   renderOggi(false);
 }
 
@@ -777,10 +819,39 @@ function modificaArrivo() {
 // MODAL: USCITA
 // ─────────────────────────────────────────────
 let mensaScelto = null;
+let uscitaOverrideGlobal = null; // Fix BUG 1+2: mantiene uscitaOverride tra renderModalUscita e confermaUscita
 
-function apriModalUscita() {
+function apriModalUscitaManuale() {
+  const arrivoSalvato = S.get('arrivo');
+  const arrivoStr = prompt('Che ora sei arrivato? (HH:MM)', arrivoSalvato ? fmtTime(arrivoSalvato) : '');
+  if (!arrivoStr) return;
+  const [ah, am] = arrivoStr.split(':').map(Number);
+  if (isNaN(ah) || isNaN(am)) { alert('Formato non valido'); return; }
+
+  const uscitaStr = prompt('Che ora sei uscito? (HH:MM)', '');
+  if (!uscitaStr) return;
+  const [uh, um] = uscitaStr.split(':').map(Number);
+  if (isNaN(uh) || isNaN(um)) { alert('Formato non valido'); return; }
+
+  // Base data: usa la data dell'arrivo salvato se esiste, altrimenti ieri
+  const baseData = arrivoSalvato ? new Date(arrivoSalvato) : (() => { const d = new Date(); d.setDate(d.getDate()-1); return d; })();
+
+  const arrivoD = new Date(baseData);
+  arrivoD.setHours(ah, am, 0, 0);
+
+  const uscitaD = new Date(baseData);
+  uscitaD.setHours(uh, um, 0, 0);
+  // Se uscita <= arrivo, è il giorno dopo (turno notturno)
+  if (uscitaD <= arrivoD) uscitaD.setDate(uscitaD.getDate() + 1);
+
+  S.set('arrivo', arrivoD.toISOString());
+  apriModalUscita(uscitaD);
+}
+
+function apriModalUscita(uscitaOverride) {
   mensaScelto = null;
-  renderModalUscita();
+  uscitaOverrideGlobal = uscitaOverride || null; // Fix BUG 1+2
+  renderModalUscita(uscitaOverrideGlobal);
   document.getElementById('modal-uscita').classList.add('open');
 }
 
@@ -788,9 +859,9 @@ function chiudiModal(id) {
   document.getElementById(id).classList.remove('open');
 }
 
-function renderModalUscita() {
+function renderModalUscita(uscitaOverride) {
   const arrivoISO = S.get('arrivo');
-  const uscitaOra = new Date();
+  const uscitaOra = uscitaOverride || new Date();
   const cfg = getConfig();
 
   let flhInfo = null;
@@ -836,22 +907,22 @@ function renderModalUscita() {
 
 function scegliMensa(v) {
   mensaScelto = v;
-  renderModalUscita();
+  renderModalUscita(uscitaOverrideGlobal); // Fix BUG 2
 }
 
 function confermaUscita() {
   const arrivoISO = S.get('arrivo');
-  const uscitaOra = new Date();
+  const uscitaOra = uscitaOverrideGlobal || new Date(); // Fix BUG 1
 
-  let flhResult = { testa: 0, coda: 0, tot: 0, fmt: '0h 00m' };
+  let flhResult = { testa: 0, coda: 0, straordinario: 0, tot: 0, fmt: '0h 00m' };
   if (todayShift && arrivoISO) {
     flhResult = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
   }
 
-  // Salva nel log
+  // Salva nel log — usa la data di uscita come chiave giornaliera
   const riga = {
     data: uscitaOra.toISOString(),
-    dateFmt: fmtDate(uscitaOra),
+    dateFmt: fmtDate(new Date(arrivoISO || uscitaOra)), // Fix BUG 6: mostra la data del turno (arrivo)
     turno: todayShift ? todayShift.titolo : '—',
     turnoInizio: todayShift ? fmtTime(todayShift.inizio) : '—',
     turnoFine: todayShift ? fmtTime(todayShift.fine) : '—',
@@ -866,25 +937,24 @@ function confermaUscita() {
   };
 
   const log = S.get('log_corrente') || [];
-  // Evita duplicati dello stesso giorno
-  const filtered = log.filter(r => !isToday(r.data));
+  // Evita duplicati: rimuovi eventuale registrazione con stessa ora di inizio turno
+  const filtered = log.filter(r => r.turnoInizio !== riga.turnoInizio);
   filtered.push(riga);
   S.set('log_corrente', filtered);
 
   // Aggiorna totale mese
-  const vecchioTot = (S.get('mese_corrente') || 0);
-  // Se era già registrato oggi, sottrai il vecchio valore
-  const vecchioOggi = log.find(r => isToday(r.data));
-  const base = vecchioOggi ? vecchioTot - vecchioOggi.flhTot : vecchioTot;
-  S.set('mese_corrente', base + flhResult.tot);
+  const vecchioTot = S.get('mese_corrente') || 0;
+  const vecchioConTurno = log.find(r => r.turnoInizio === riga.turnoInizio);
+  const base = vecchioConTurno ? vecchioTot - vecchioConTurno.flhTot : vecchioTot;
+  S.set('mese_corrente', Math.max(0, base + flhResult.tot));
 
-  // Reset arrivo
+  // Reset
   S.del('arrivo');
+  uscitaOverrideGlobal = null;
 
   chiudiModal('modal-uscita');
   mostraRisultato(riga);
 
-  // Salva su GitHub in background
   ghSave().then(ok => {
     if (!ok) console.warn('Salvataggio GitHub non riuscito — dati solo in locale');
   });
@@ -957,14 +1027,18 @@ function renderMese() {
   if (!log.length) {
     html += '<div class="empty"><div class="ico">📋</div>Nessun giorno registrato questo mese</div>';
   } else {
-    [...log].reverse().forEach(r => {
+    [...log].reverse().forEach((r, i) => {
+      const idx = log.length - 1 - i; // indice reale nel log non invertito
       html += `<div class="log-item">
-        <div>
+        <div style="min-width:0">
           <div class="log-date">${r.dateFmt}</div>
           <div class="log-turno">${r.turno}</div>
           <div class="log-details">${r.turnoInizio}→${r.turnoFine} · presenza ${r.arrivo}→${r.uscita} · mensa ${r.mensa==='si'?'✓':'✗'}</div>
         </div>
-        <div class="${r.flhTot > 0 ? 'log-flh' : 'log-flh zero'}">${r.flhFmt}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+          <div class="${r.flhTot > 0 ? 'log-flh' : 'log-flh zero'}">${r.flhFmt}</div>
+          <button class="btn-small" onclick="apriModificaGiorno(${idx})">✏️</button>
+        </div>
       </div>`;
     });
   }
@@ -1064,8 +1138,120 @@ function esportaStorico() {
 }
 
 // ─────────────────────────────────────────────
-// RENDER: SETUP
+// MODIFICA MANUALE GIORNI
 // ─────────────────────────────────────────────
+let editIdx = null;
+
+function apriModificaGiorno(idx) {
+  editIdx = idx;
+  const log = S.get('log_corrente') || [];
+  const r = log[idx];
+  if (!r) return;
+
+  const html = `
+    <div class="flh-preview" style="margin-bottom:16px">
+      <div class="flh-preview-row"><span class="flh-preview-label">Data</span><span class="flh-preview-val">${r.dateFmt}</span></div>
+      <div class="flh-preview-row"><span class="flh-preview-label">Turno</span><span class="flh-preview-val">${r.turno} · ${r.turnoInizio}→${r.turnoFine}</span></div>
+    </div>
+
+    <div class="setup-group">
+      <div class="setup-label">Ora arrivo</div>
+      <input class="setup-input" id="edit-arrivo" type="time" value="${r.arrivo}">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Ora uscita</div>
+      <input class="setup-input" id="edit-uscita" type="time" value="${r.uscita}">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Mensa</div>
+      <div class="mensa-toggle" style="margin-bottom:0">
+        <button class="mensa-btn ${r.mensa==='si'?'selected':''}" id="edit-mensa-si" onclick="toggleEditMensa('si')">🍽️ Sì</button>
+        <button class="mensa-btn ${r.mensa==='no'?'selected':''}" id="edit-mensa-no" onclick="toggleEditMensa('no')">❌ No</button>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <button class="btn-main arrival" onclick="salvaModificaGiorno()">✅ Salva modifica</button>
+    <button class="btn-secondary" onclick="chiudiModal('modal-modifica')">Annulla</button>
+    <div style="height:8px"></div>
+    <button class="export-btn" style="border-color:var(--red);color:#FCA5A5" onclick="eliminaGiorno(${idx})">
+      <span class="ico">🗑️</span><span>Elimina questo giorno</span>
+    </button>`;
+
+  document.getElementById('modal-modifica-content').innerHTML = html;
+  document.getElementById('modal-modifica').classList.add('open');
+}
+
+function toggleEditMensa(v) {
+  document.getElementById('edit-mensa-si').classList.toggle('selected', v === 'si');
+  document.getElementById('edit-mensa-no').classList.toggle('selected', v === 'no');
+}
+
+function salvaModificaGiorno() {
+  const log = S.get('log_corrente') || [];
+  const r = log[editIdx];
+  if (!r) return;
+
+  const nuovoArrivo = document.getElementById('edit-arrivo').value;
+  const nuovaUscita = document.getElementById('edit-uscita').value;
+  const nuovaMensa = document.getElementById('edit-mensa-si').classList.contains('selected') ? 'si' : 'no';
+
+  if (!nuovoArrivo || !nuovaUscita) { alert('Inserisci orari validi'); return; }
+
+  // Ricostruisce le date usando la data originale del giorno
+  const baseData = new Date(r.data);
+  const [ah, am] = nuovoArrivo.split(':').map(Number);
+  const [uh, um] = nuovaUscita.split(':').map(Number);
+
+  const arrivoD = new Date(baseData); arrivoD.setHours(ah, am, 0, 0);
+  const uscitaD = new Date(baseData); uscitaD.setHours(uh, um, 0, 0);
+  if (uscitaD <= arrivoD) uscitaD.setDate(uscitaD.getDate() + 1);
+
+  // Ricalcola FLH
+  const [tiH, tiM] = r.turnoInizio.split(':').map(Number);
+  const [tfH, tfM] = r.turnoFine.split(':').map(Number);
+  const turnoIni = new Date(baseData); turnoIni.setHours(tiH, tiM, 0, 0);
+  const turnoFin = new Date(baseData); turnoFin.setHours(tfH, tfM, 0, 0);
+  if (turnoFin <= turnoIni) turnoFin.setDate(turnoFin.getDate() + 1);
+
+  const flh = calcolaFLH(arrivoD, uscitaD, turnoIni, turnoFin);
+
+  // Aggiorna la riga
+  const vecchioFlh = r.flhTot;
+  log[editIdx] = {
+    ...r,
+    arrivo: fmtTime(arrivoD),
+    uscita: fmtTime(uscitaD),
+    mensa: nuovaMensa,
+    flhTesta: flh.testa,
+    flhCoda: flh.coda,
+    flhStraordinario: flh.straordinario || 0,
+    flhTot: flh.tot,
+    flhFmt: flh.fmt,
+  };
+  S.set('log_corrente', log);
+
+  // Aggiorna totale mese
+  const tot = (S.get('mese_corrente') || 0) - vecchioFlh + flh.tot;
+  S.set('mese_corrente', Math.max(0, tot));
+
+  chiudiModal('modal-modifica');
+  ghSave();
+  renderMese();
+  alert(`✅ Giorno modificato\nFLH: ${flh.fmt}`);
+}
+
+function eliminaGiorno(idx) {
+  if (!confirm('Eliminare questo giorno dal log?')) return;
+  const log = S.get('log_corrente') || [];
+  const vecchioFlh = log[idx] ? log[idx].flhTot : 0;
+  log.splice(idx, 1);
+  S.set('log_corrente', log);
+  const tot = Math.max(0, (S.get('mese_corrente') || 0) - vecchioFlh);
+  S.set('mese_corrente', tot);
+  chiudiModal('modal-modifica');
+  ghSave();
+  renderMese();
+}
 function renderSetup() {
   const cfg = getConfig();
   document.getElementById('setup-content').innerHTML = `
