@@ -340,7 +340,7 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '2.1';
+const APP_VERSION = '2.2';
 
 // ─────────────────────────────────────────────
 // STORAGE
@@ -444,9 +444,9 @@ const defaultConfig = {
 };
 
 function getConfig() {
-  // Prima legge dal localStorage, poi sovrascrive con params dall'URL hash se presenti
   const base = Object.assign({}, defaultConfig, S.get('config') || {});
   try {
+    // Legge parametri configurazione dall'hash (es. #k=...&c=...)
     const hash = window.location.hash.slice(1);
     if (hash) {
       const params = new URLSearchParams(hash);
@@ -458,7 +458,6 @@ function getConfig() {
       if (params.get('gt')) base.ghToken = params.get('gt');
       if (params.get('go')) base.ghOwner = params.get('go');
       if (params.get('gr')) base.ghRepo = params.get('gr');
-      // Salva in localStorage così è disponibile subito
       S.set('config', base);
     }
   } catch(e) {}
@@ -1378,11 +1377,19 @@ function salvaConfig() {
   if (cfg.ghToken) params.set('gt', cfg.ghToken);
   if (cfg.ghOwner) params.set('go', cfg.ghOwner);
   if (cfg.ghRepo) params.set('gr', cfg.ghRepo);
-  const newUrl = window.location.pathname + (params.toString() ? '#' + params.toString() : '');
+  const baseUrl = window.location.pathname;
+  const hashPart = params.toString() ? '#' + params.toString() : '';
+  const newUrl = baseUrl + hashPart;
   window.history.replaceState(null, '', newUrl);
 
-  const fullUrl = window.location.href;
-  alert('✅ Impostazioni salvate!\n\n📌 IMPORTANTE: aggiungi alla Home questo URL:\n\n' + fullUrl + '\n\nSe rimuovi e riaggiungi l\'app dalla Home, usa questo link.');
+  const urlArrivo = window.location.origin + baseUrl + '?action=arrivo' + hashPart;
+  const urlUscita = window.location.origin + baseUrl + '?action=uscita' + hashPart;
+
+  alert('✅ Impostazioni salvate!\n\n' +
+    '📌 URL per la schermata Home:\n' + window.location.href + '\n\n' +
+    '🔵 URL Shortcut FLH ARRIVO:\n' + urlArrivo + '\n\n' +
+    '🔴 URL Shortcut FLH USCITA:\n' + urlUscita + '\n\n' +
+    'Copia ognuno nella shortcut corrispondente in Comandi.');
   navTo('oggi');
   renderOggi(true);
 }
