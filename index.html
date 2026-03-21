@@ -1134,6 +1134,8 @@ function renderSetup() {
     </div>
 
     <div class="divider"></div>
+
+    <button class="btn-main arrival" onclick="salvaConfig()">✅ Salva impostazioni</button>
     <div style="height:16px"></div>
     <div class="section-title" style="margin-top:8px">Zona pericolo</div>
     <button class="export-btn" style="border-color:var(--red);color:#FCA5A5" onclick="resetDati()">
@@ -1143,15 +1145,16 @@ function renderSetup() {
 }
 
 function salvaConfig() {
+  const prev = getConfig();
   const cfg = {
-    apiKey: document.getElementById('cfg-apikey').value.trim(),
-    calendarId: document.getElementById('cfg-calid').value.trim(),
-    workRadius: parseInt(document.getElementById('cfg-radius').value) || 150,
-    workLat: parseFloat(document.getElementById('cfg-lat').value) || 41.9248,
-    workLng: parseFloat(document.getElementById('cfg-lng').value) || 12.4598,
-    ghToken: document.getElementById('cfg-ghtoken').value.trim(),
-    ghOwner: document.getElementById('cfg-ghowner').value.trim(),
-    ghRepo: document.getElementById('cfg-ghrepo').value.trim(),
+    apiKey: (document.getElementById('cfg-apikey') || {}).value?.trim() || prev.apiKey,
+    calendarId: (document.getElementById('cfg-calid') || {}).value?.trim() || prev.calendarId,
+    workRadius: parseInt((document.getElementById('cfg-radius') || {}).value) || 150,
+    workLat: parseFloat((document.getElementById('cfg-lat') || {}).value) || 41.9248,
+    workLng: parseFloat((document.getElementById('cfg-lng') || {}).value) || 12.4598,
+    ghToken: (document.getElementById('cfg-ghtoken') || {}).value?.trim() || prev.ghToken,
+    ghOwner: (document.getElementById('cfg-ghowner') || {}).value?.trim() || prev.ghOwner,
+    ghRepo: (document.getElementById('cfg-ghrepo') || {}).value?.trim() || prev.ghRepo,
   };
   S.set('config', cfg);
 
