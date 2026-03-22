@@ -414,16 +414,7 @@ async function ghLoad() {
   if (!result || !result.content) return false;
   const d = result.content;
   S.set('gh_sha', result.sha);
-  // Ripristina config da GitHub (sopravvive alla cache del browser)
-  if (d.config) {
-    const localCfg = S.get('config') || {};
-    const merged = Object.assign({}, d.config, {
-      ghToken: localCfg.ghToken || d.config.ghToken,
-      ghOwner: localCfg.ghOwner || d.config.ghOwner,
-      ghRepo:  localCfg.ghRepo  || d.config.ghRepo,
-    });
-    S.set('config', merged);
-  }
+  // La config viene gestita tramite QR, link o PIN — non da GitHub
   if (d.mese_attivo) S.set('mese_attivo', d.mese_attivo);
   if (d.mese_corrente !== undefined) S.set('mese_corrente', d.mese_corrente);
   if (d.log_corrente) S.set('log_corrente', d.log_corrente);
@@ -480,8 +471,9 @@ async function ghSave() {
     S.set('mese_corrente', totMerged);
   }
 
+  // La config NON viene salvata su GitHub (contiene credenziali sensibili)
+  // Rimane solo in localStorage, QR, link e PIN cifrato
   const data = {
-    config: cfg,
     mese_attivo: S.get('mese_attivo'),
     mese_corrente: S.get('mese_corrente') || 0,
     log_corrente: S.get('log_corrente') || [],
@@ -1616,17 +1608,19 @@ function salvaConfig() {
   const urlArrivo = origin + path + '?action=arrivo';
   const urlUscita = origin + path + '?action=uscita';
 
-  // Aggiorna URL senza hash
   window.history.replaceState(null, '', path);
 
-  // Salva anche su GitHub così le impostazioni sopravvivono alla cache
-  ghSave();
-
-  alert('✅ Impostazioni salvate!\n\n' +
-    '📌 URL schermata Home (fisso per sempre):\n' + urlHome + '\n\n' +
-    '🔵 URL Shortcut FLH ARRIVO (fisso):\n' + urlArrivo + '\n\n' +
-    '🔴 URL Shortcut FLH USCITA (fisso):\n' + urlUscita + '\n\n' +
-    'Questi URL non cambiano mai — configurali una volta sola nelle Shortcut.');
+  // Sincronizza config su GitHub e mostra risultato
+  ghSave().then(ok => {
+    const syncMsg = ok
+      ? '☁️ Config sincronizzata su GitHub (dati_flh.json)'
+      : '⚠️ Sync GitHub non riuscita — verifica Token e Repository';
+    alert('✅ Impostazioni salvate!\n\n' + syncMsg + '\n\n' +
+      '📌 URL Home: ' + urlHome + '\n' +
+      '🔵 Arrivo: ' + urlArrivo + '\n' +
+      '🔴 Uscita: ' + urlUscita);
+    logAdd('info', 'Impostazioni salvate', ok ? 'Sincronizzato su GitHub' : 'GitHub sync fallita');
+  });
   navTo('oggi');
   renderOggi(true);
 }
