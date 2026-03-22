@@ -2095,7 +2095,7 @@ controllaCambioMese();
 
   // Gestione azione da URL (es. ?action=arrivo o ?action=uscita)
   // Usato dalle iOS Shortcuts geofence per automazione
-  (async function handleUrlAction() {
+  await (async function handleUrlAction() {
     // URL fissi: ?action=arrivo o ?action=uscita — nessun hash
     const qsParams = new URLSearchParams(window.location.search);
     const action = qsParams.get('action');
@@ -2230,6 +2230,8 @@ controllaCambioMese();
           </div>`;
       })();
     }
+
+  })();
 
   renderOggi(true);
 })();
