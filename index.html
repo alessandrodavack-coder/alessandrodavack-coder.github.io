@@ -1576,6 +1576,9 @@ function renderSetup() {
     <div style="background:#111;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:10px">
       <div style="font-size:12px;font-weight:600;color:#F0F0F0;margin-bottom:4px">🔑 PIN <span style="font-size:10px;color:#555;font-weight:400">— più sicuro, richiede GitHub configurato</span></div>
       <div style="font-size:11px;color:#666;margin-bottom:10px">Cifra le impostazioni con un PIN e le salva su GitHub. Per ripristinare inserisci solo il PIN.</div>
+      <div id="pin-github-status" style="font-size:11px;padding:6px 10px;border-radius:6px;margin-bottom:8px;background:#0a0a0a;border:1px solid #222">
+        ${(()=>{ const c=Object.assign({},{ghToken:'',ghOwner:'',ghRepo:''},JSON.parse(localStorage.getItem('flh_config')||'{}')); return c.ghToken&&c.ghOwner&&c.ghRepo ? '<span style="color:#6EE7B7">✅ GitHub configurato — PIN disponibile</span>' : '<span style="color:#FCA5A5">❌ GitHub non configurato — salva prima le impostazioni sopra</span>'; })()}
+      </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <input id="pin-input" type="number" placeholder="PIN (min 4 cifre)" maxlength="8"
           style="flex:1;background:#0a0a0a;border:1px solid #333;border-radius:8px;color:#F0F0F0;
@@ -1837,7 +1840,12 @@ async function salvaConPIN() {
   if (!pin || pin.length < 4) { alert('⚠️ Inserisci un PIN di almeno 4 cifre.'); return; }
   const cfg = getConfig();
   if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) {
-    alert('⚠️ Configura prima GitHub Token, Username e Repository.');
+    alert('⚠️ GitHub non configurato.\n\n' +
+      '• Token: ' + (cfg.ghToken ? '✅' : '❌ mancante') + '\n' +
+      '• Username: ' + (cfg.ghOwner || '❌ mancante') + '\n' +
+      '• Repository: ' + (cfg.ghRepo || '❌ mancante') + '\n\n' +
+      'Vai in ⚙️ → compila i campi GitHub → tocca ✅ Salva impostazioni → riprova.'
+    );
     return;
   }
   try {
@@ -1850,24 +1858,20 @@ async function salvaConPIN() {
       gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
     }));
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, payload);
-    // Salva su GitHub come file separato
-    const blob = {
-      salt: Array.from(salt), iv: Array.from(iv),
-      data: Array.from(new Uint8Array(ciphertext)),
-    };
+    const blob = { salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(ciphertext)) };
     const sha = S.get('pin_sha');
-    const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo,
-      blob, sha, 'config_pin.json');
+    const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, blob, sha, 'config_pin.json');
     if (newSha) {
       S.set('pin_sha', newSha);
-      alert('✅ Backup con PIN salvato su GitHub!\n\nRicorda il PIN: ' + pin + '\nSenza di esso non potrai ripristinare le impostazioni.');
+      alert('✅ PIN salvato su GitHub!\nRicorda il PIN: ' + pin);
     } else {
-      alert('❌ Errore nel salvataggio su GitHub. Controlla le impostazioni GitHub.');
+      alert('❌ Errore nel salvataggio su GitHub.');
     }
   } catch(e) {
     alert('❌ Errore: ' + e.message);
   }
 }
+
 
 async function ripristinaConPIN() {
   const pin = prompt('Inserisci il PIN di ripristino:');
