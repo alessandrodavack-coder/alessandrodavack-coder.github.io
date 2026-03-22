@@ -379,11 +379,13 @@ const GH = {
         { headers: this.headers(token), cache: 'no-store' }
       );
       if (r.status === 404) return { content: null, sha: null };
-      if (!r.ok) return null;
+      if (r.status === 401) throw new Error('Token non valido o scaduto (401 Unauthorized)');
+      if (r.status === 403) throw new Error('Permessi insufficienti (403 Forbidden) — verifica che il token abbia scope "repo"');
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message + ' (' + r.status + ')'); }
       const d = await r.json();
       const content = JSON.parse(atob(d.content.replace(/\n/g, '')));
       return { content, sha: d.sha };
-    } catch { return null; }
+    } catch(e) { console.error('GH getFile error:', e); logAdd('sync_err', 'GitHub getFile: ' + e.message, ''); return null; }
   },
 
   async saveFile(token, owner, repo, data, sha, file) {
@@ -397,10 +399,14 @@ const GH = {
         `https://api.github.com/repos/${owner}/${repo}/contents/${file || this.FILE}`,
         { method: 'PUT', headers: this.headers(token), body: JSON.stringify(body) }
       );
-      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      if (r.status === 401) throw new Error('Token non valido o scaduto (401) — rigenera il token su github.com/settings/tokens');
+      if (r.status === 403) throw new Error('Permessi insufficienti (403) — il token deve avere scope "repo"');
+      if (r.status === 404) throw new Error('Repository non trovato (404) — controlla Username e Repository');
+      if (r.status === 409) throw new Error('Conflitto (409) — riprova tra qualche secondo');
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message + ' (' + r.status + ')'); }
       const d = await r.json();
       return d.content.sha;
-    } catch(e) { console.error('GH save error:', e); return null; }
+    } catch(e) { console.error('GH save error:', e); logAdd('sync_err', 'GitHub saveFile: ' + e.message, ''); return null; }
   },
 };
 
@@ -486,7 +492,7 @@ async function ghSave() {
     logAdd('sync_ok', 'Dati salvati su GitHub', 'Log: ' + (S.get('log_corrente')||[]).length + ' righe');
     return true;
   }
-  logAdd('sync_err', 'Errore salvataggio GitHub', 'Controlla token e connessione');
+  // L'errore è già stato loggato in GH.saveFile
   return false;
 }
 
@@ -1612,9 +1618,11 @@ function salvaConfig() {
 
   // Sincronizza config su GitHub e mostra risultato
   ghSave().then(ok => {
+    const log = (S.get('activity_log') || []);
+    const lastErr = log.find(v => v.tipo === 'sync_err');
     const syncMsg = ok
       ? '☁️ Config sincronizzata su GitHub (dati_flh.json)'
-      : '⚠️ Sync GitHub non riuscita — verifica Token e Repository';
+      : '⚠️ Sync GitHub non riuscita:\n' + (lastErr ? lastErr.msg : 'errore sconosciuto') + '\n\nControlla:\n• Token valido con scope "repo"\n• Username e Repository corretti\n• Connessione internet attiva';
     alert('✅ Impostazioni salvate!\n\n' + syncMsg + '\n\n' +
       '📌 URL Home: ' + urlHome + '\n' +
       '🔵 Arrivo: ' + urlArrivo + '\n' +
