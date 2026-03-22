@@ -20,10 +20,9 @@
   --s3: #222222;
   --border: #2a2a2a;
   --acc: #F59E0B;
-  --acc2: #FCD34D;
   --green: #10B981;
   --red: #EF4444;
-  --blue: #60A5FA;
+  --yellow: #FBBF24;
   --t1: #F0F0F0;
   --t2: #888;
   --t3: #444;
@@ -97,7 +96,7 @@ body {
 }
 .status-badge.at-work { background: rgba(16,185,129,.15); color: var(--green); border: 1px solid rgba(16,185,129,.3); }
 .status-badge.not-work { background: rgba(255,255,255,.04); color: var(--t3); border: 1px solid var(--border); }
-.status-badge.unknown { background: rgba(96,165,250,.1); color: var(--blue); border: 1px solid rgba(96,165,250,.3); }
+.status-badge.unknown { background: rgba(255,255,255,.04); color: var(--t2); border: 1px solid var(--border); }
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
 /* SHIFT CARD */
@@ -262,6 +261,9 @@ body {
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .screen.active { animation: fadeIn .2s ease; }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -294,6 +296,11 @@ body {
       <div id="storico-content"></div>
     </div>
 
+    <!-- SCREEN: LOG -->
+    <div class="screen" id="screen-log">
+      <div id="log-content"></div>
+    </div>
+
     <!-- SCREEN: SETUP -->
     <div class="screen" id="screen-setup">
       <div id="setup-content"></div>
@@ -311,6 +318,9 @@ body {
     </button>
     <button class="nav-btn" data-screen="storico">
       <span class="ico">📁</span>Storico
+    </button>
+    <button class="nav-btn" data-screen="log">
+      <span class="ico">📋</span>Log
     </button>
   </nav>
 </div>
@@ -332,6 +342,9 @@ body {
     <div id="modal-modifica-content"></div>
   </div>
 </div>
+
+<!-- MODAL: RISULTATO FLH -->
+<div class="modal-overlay" id="modal-risultato">
   <div class="modal">
     <div class="modal-handle"></div>
     <div class="modal-title">✅ FLH Registrato</div>
@@ -340,22 +353,14 @@ body {
 </div>
 
 <script>
-const APP_VERSION = '2.7';
 
-// ─────────────────────────────────────────────
-// STORAGE
-// ─────────────────────────────────────────────
 const S = {
   get: k => { try { return JSON.parse(localStorage.getItem('flh_' + k)); } catch { return null; } },
   set: (k, v) => localStorage.setItem('flh_' + k, JSON.stringify(v)),
   del: k => localStorage.removeItem('flh_' + k),
 };
 
-// ─────────────────────────────────────────────
-// GITHUB API — salvataggio persistente
-// ─────────────────────────────────────────────
 const GH = {
-  // File salvati nel repo: dati_flh.json (unico file con tutto)
   FILE: 'dati_flh.json',
 
   headers(token) {
@@ -366,10 +371,10 @@ const GH = {
     };
   },
 
-  async getFile(token, owner, repo) {
+  async getFile(token, owner, repo, file) {
     try {
       const r = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${this.FILE}`,
+        `https://api.github.com/repos/${owner}/${repo}/contents/${file || this.FILE}`,
         { headers: this.headers(token), cache: 'no-store' }
       );
       if (r.status === 404) return { content: null, sha: null };
@@ -380,7 +385,7 @@ const GH = {
     } catch { return null; }
   },
 
-  async saveFile(token, owner, repo, data, sha) {
+  async saveFile(token, owner, repo, data, sha, file) {
     try {
       const body = {
         message: 'FLH update ' + new Date().toISOString().slice(0,10),
@@ -388,7 +393,7 @@ const GH = {
       };
       if (sha) body.sha = sha;
       const r = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${this.FILE}`,
+        `https://api.github.com/repos/${owner}/${repo}/contents/${file || this.FILE}`,
         { method: 'PUT', headers: this.headers(token), body: JSON.stringify(body) }
       );
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
@@ -399,6 +404,8 @@ const GH = {
 };
 
 // Carica dati da GitHub e aggiorna localStorage
+
+// ─── 3. SYNC ───────────────────────────────────────────────
 async function ghLoad() {
   const cfg = getConfig();
   if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return false;
@@ -406,32 +413,91 @@ async function ghLoad() {
   if (!result || !result.content) return false;
   const d = result.content;
   S.set('gh_sha', result.sha);
+  // Ripristina config da GitHub (sopravvive alla cache del browser)
+  if (d.config) {
+    const localCfg = S.get('config') || {};
+    const merged = Object.assign({}, d.config, {
+      ghToken: localCfg.ghToken || d.config.ghToken,
+      ghOwner: localCfg.ghOwner || d.config.ghOwner,
+      ghRepo:  localCfg.ghRepo  || d.config.ghRepo,
+    });
+    S.set('config', merged);
+  }
   if (d.mese_attivo) S.set('mese_attivo', d.mese_attivo);
   if (d.mese_corrente !== undefined) S.set('mese_corrente', d.mese_corrente);
   if (d.log_corrente) S.set('log_corrente', d.log_corrente);
   if (d.archivio) S.set('archivio', d.archivio);
-  if (d.ultimo_turno) S.set('ultimo_turno', d.ultimo_turno);
+  logAdd('sync_ok', 'Dati caricati da GitHub', d.aggiornato ? 'Aggiornato: ' + new Date(d.aggiornato).toLocaleString('it-IT') : '');
   return true;
 }
 
-// Salva tutti i dati su GitHub
+// Merge log di due dispositivi: per stesso giorno/turno vince il salvataggio più recente
+// Merge di due log: per stessa chiave (dateFmt|turnoInizio) vince
+// la registrazione con timestamp più recente. Usato da ghSave.
+function mergeLog(logA, logB) {
+  const map = new Map();
+  [...logA, ...logB].forEach(r => {
+    const key = r.dateFmt + '|' + r.turnoInizio;
+    const prev = map.get(key);
+      if (!prev || new Date(r.data) > new Date(prev.data)) map.set(key, r);
+  });
+  return Array.from(map.values()).sort((a,b) => new Date(a.data) - new Date(b.data));
+}
+
+// Salva su GitHub con strategia read-before-write:
+// rilegge sempre l'ultimo sha remoto e fa merge prima di scrivere.
+// Garantisce coerenza anche con due dispositivi aperti contemporaneamente.
 async function ghSave() {
   const cfg = getConfig();
   if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return false;
+
+  const remote = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo);
+  let sha = remote ? remote.sha : S.get('gh_sha');
+
+  if (remote && remote.content) {
+    const rem = remote.content;
+    const localLog = S.get('log_corrente') || [];
+    const remoteLog = rem.log_corrente || [];
+
+    const mergedLog = mergeLog(localLog, remoteLog);
+
+    const localArch = S.get('archivio') || [];
+    const remoteArch = rem.archivio || [];
+    const archMap = new Map();
+    [...remoteArch, ...localArch].forEach(a => archMap.set(a.mese, a));
+    const mergedArch = Array.from(archMap.values())
+      .sort((a,b) => b.mese.localeCompare(a.mese));
+
+    const totMerged = mergedLog.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+
+    const righeAggiunteDaRemote = mergedLog.length - localLog.length;
+    if (righeAggiunteDaRemote > 0) {
+      logAdd('merge', 'Merge dati da altro dispositivo', '+' + righeAggiunteDaRemote + ' righe integrate');
+    }
+    S.set('log_corrente', mergedLog);
+    S.set('archivio', mergedArch);
+    S.set('mese_corrente', totMerged);
+  }
+
   const data = {
+    config: cfg,
     mese_attivo: S.get('mese_attivo'),
     mese_corrente: S.get('mese_corrente') || 0,
     log_corrente: S.get('log_corrente') || [],
     archivio: S.get('archivio') || [],
-    ultimo_turno: S.get('ultimo_turno') || null,
     aggiornato: new Date().toISOString(),
   };
-  const sha = S.get('gh_sha');
   const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, data, sha);
-  if (newSha) { S.set('gh_sha', newSha); return true; }
+  if (newSha) {
+    S.set('gh_sha', newSha);
+    logAdd('sync_ok', 'Dati salvati su GitHub', 'Log: ' + (S.get('log_corrente')||[]).length + ' righe');
+    return true;
+  }
+  logAdd('sync_err', 'Errore salvataggio GitHub', 'Controlla token e connessione');
   return false;
 }
 
+// ─── 4. CONFIG ────────────────────────────────────────────
 const defaultConfig = {
   apiKey: '',
   calendarId: '',
@@ -444,24 +510,7 @@ const defaultConfig = {
 };
 
 function getConfig() {
-  const base = Object.assign({}, defaultConfig, S.get('config') || {});
-  try {
-    // Legge parametri configurazione dall'hash (es. #k=...&c=...)
-    const hash = window.location.hash.slice(1);
-    if (hash) {
-      const params = new URLSearchParams(hash);
-      if (params.get('k')) base.apiKey = params.get('k');
-      if (params.get('c')) base.calendarId = params.get('c');
-      if (params.get('r')) base.workRadius = parseInt(params.get('r'));
-      if (params.get('lat')) base.workLat = parseFloat(params.get('lat'));
-      if (params.get('lng')) base.workLng = parseFloat(params.get('lng'));
-      if (params.get('gt')) base.ghToken = params.get('gt');
-      if (params.get('go')) base.ghOwner = params.get('go');
-      if (params.get('gr')) base.ghRepo = params.get('gr');
-      S.set('config', base);
-    }
-  } catch(e) {}
-  return base;
+  return Object.assign({}, defaultConfig, S.get('config') || {});
 }
 
 function getMeseKey(d) {
@@ -469,6 +518,7 @@ function getMeseKey(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
+// ─── 5. CAMBIO MESE ───────────────────────────────────────
 function controllaCambioMese() {
   const meseAttivo = S.get('mese_attivo');
   const meseOggi = getMeseKey();
@@ -476,21 +526,21 @@ function controllaCambioMese() {
     const totMin = S.get('mese_corrente') || 0;
     const log = S.get('log_corrente') || [];
     const archivio = S.get('archivio') || [];
-    archivio.unshift({ mese: meseAttivo, totMin, totFmt: minToHM(totMin), giorni: log });
+    const meseArchiviato = { mese: meseAttivo, totMin, totFmt: minToHM(totMin), giorni: log };
+    archivio.unshift(meseArchiviato);
     S.set('archivio', archivio);
     S.set('mese_corrente', 0);
     S.set('log_corrente', []);
     S.del('arrivo');
     S.set('mese_attivo', meseOggi);
-    ghSave(); // Fix BUG 4: sincronizza archivio su GitHub
+    logAdd('archivio', 'Mese ' + meseAttivo + ' archiviato', 'Totale: ' + minToHM(totMin) + ' | ' + log.length + ' giorni');
+    archiviaMeseGitHub(meseAttivo, meseArchiviato).catch(()=>{});
+    ghSave();
   } else {
     S.set('mese_attivo', meseOggi);
   }
 }
 
-// ─────────────────────────────────────────────
-// UTILS
-// ─────────────────────────────────────────────
 function minToHM(min) {
   min = Math.max(0, Math.round(min));
   const h = Math.floor(min / 60);
@@ -541,9 +591,11 @@ function isToday(isoStr) {
   return d.getDate() === t.getDate() && d.getMonth() === t.getMonth() && d.getFullYear() === t.getFullYear();
 }
 
-// ─────────────────────────────────────────────
-// FLH CALCULATION
-// ─────────────────────────────────────────────
+// ─── 7. CALCOLO FLH ───────────────────────────────────────
+// Calcola FLH/FMH giornaliero.
+// Regole: testa = ritardo arrivo, coda = anticipo uscita.
+// Straordinario (uscita dopo fine turno) compensa la testa.
+// Soglia minima: 15 min. Cap massimo: 120 min (2h).
 function calcolaFLH(arrivo, uscita, turnoInizio, turnoFine) {
   const a = new Date(arrivo), u = new Date(uscita);
   const ti = new Date(turnoInizio), tf = new Date(turnoFine);
@@ -574,9 +626,7 @@ function calcolaFLH(arrivo, uscita, turnoInizio, turnoFine) {
   return { testa, coda, straordinario, tot, fmt: minToHM(tot) };
 }
 
-// ─────────────────────────────────────────────
-// GEOLOCATION
-// ─────────────────────────────────────────────
+// ─── 8. GEOLOC ────────────────────────────────────────────
 let geoStatus = 'unknown'; // unknown | at_work | away
 let lastPos = null;
 
@@ -596,12 +646,14 @@ function checkGeo() {
   });
 }
 
-// ─────────────────────────────────────────────
-// GOOGLE CALENDAR
-// ─────────────────────────────────────────────
+// ─── 9. CALENDARIO ────────────────────────────────────────
 let todayShift = null;
 let calendarError = null;
 
+// Recupera il turno attivo da Google Calendar.
+// Priorità: 1) turno di ieri ancora in corso, 2) turno notturno di ieri finito
+// oggi ma non ancora registrato, 3) primo turno che inizia oggi.
+// Gli eventi MNL/MRIP vengono marcati come flhDisabilitato (→ FMH).
 async function fetchShift() {
   const cfg = getConfig();
   calendarError = null;
@@ -622,36 +674,66 @@ async function fetchShift() {
     const data = await resp.json();
     if (data.error) { calendarError = data.error.message; return null; }
 
-    const allEvents = (data.items || []).filter(e => {
-      if (!e.start || !e.start.dateTime) return false; // scarta eventi tutto-il-giorno
-      // Scarta SOLO titoli che sono esclusivamente una sigla di riposo/assenza
-      // MNL/MRIP come PREFISSO (es. "MNL 8.30") vengono inclusi — hanno orario valido
+    // Helper: estrae orari da titolo tipo "MRIP 11.30-20.05" o "MNL 8.30-17.05"
+    function orariDaTitolo(summary, dataBase) {
+      const m = summary.match(/(\d{1,2})[.:](\d{2})\s*[-–]\s*(\d{1,2})[.:](\d{2})/);
+      if (!m) return null;
+      const ini = new Date(dataBase); ini.setHours(parseInt(m[1]), parseInt(m[2]), 0, 0);
+      const fin = new Date(dataBase); fin.setHours(parseInt(m[3]), parseInt(m[4]), 0, 0);
+      if (fin <= ini) fin.setDate(fin.getDate() + 1); // notturno
+      return { ini, fin };
+    }
+
+    const allEventsRaw = (data.items || []).filter(e => e.start);
+    const allEvents = [];
+
+    // Raccoglie le date in cui c'è un evento tutto-il-giorno MNL o MRIP
+    // → servirà per marcare come FMH i turni con orario dello stesso giorno
+    const giorniFMH = new Set();
+    for (const e of allEventsRaw) {
+      if (!e.start.date) continue; // solo eventi tutto-il-giorno
       const titolo = (e.summary || '').toUpperCase().trim();
-      // Scarta solo pure sigle di riposo (tutto il giorno fuori)
+      if (titolo.startsWith('MNL') || titolo.startsWith('MRIP') ||
+          titolo === 'MNL' || titolo === 'MRIP') {
+        giorniFMH.add(e.start.date); // es. "2026-03-21"
+      }
+    }
+
+    for (const e of allEventsRaw) {
+      const titolo = (e.summary || '').toUpperCase().trim();
       const soloRiposo = ['NL','RIPOSO','RO','HP','FS','RRI','RN','FERIE','PERMESSO','MALATTIA'];
-      if (soloRiposo.includes(titolo)) return false;
-      // MNL/MRIP come prefisso → presente ma FLH=0, includi comunque il turno
-      return true;
-    });
+      if (soloRiposo.includes(titolo)) continue;
+      // Scarta eventi tutto-il-giorno puri (MNL/MRIP senza orari sono già in giorniFMH)
+      if (!e.start.dateTime) {
+        if ((titolo.startsWith('MNL') || titolo.startsWith('MRIP')) && e.start.date) {
+          const dataBase = new Date(e.start.date + 'T00:00:00');
+          const orari = orariDaTitolo(e.summary || '', dataBase);
+          if (orari) {
+            allEvents.push({
+              ...e,
+              start: { dateTime: orari.ini.toISOString() },
+              end:   { dateTime: orari.fin.toISOString() },
+              _fmh: true
+            });
+          }
+        }
+        continue;
+      }
+      // Evento con orario — controlla se quel giorno ha un marcatore FMH
+      const dataEvento = e.start.dateTime.slice(0,10);
+      const isFMHTitolo = titolo.startsWith('MNL') || titolo.startsWith('MRIP');
+      const isFMHGiorno = giorniFMH.has(dataEvento);
+      allEvents.push({ ...e, _fmh: isFMHTitolo || isFMHGiorno });
+    }
     const logCorrente = S.get('log_corrente') || [];
 
-    // Helper: questo turno è già nel log? (controlla turnoInizio nelle ultime 48h)
-    // Controlla sia il log completo che il registro separato dell'ultimo turno
+    // Helper: questo turno è già nel log nelle ultime 48h?
     const giaLoggato = startDate => {
       const ini = pad(startDate.getHours()) + ':' + pad(startDate.getMinutes());
-      // 1) Controlla nel log completo
-      const inLog = logCorrente.some(r => {
+      return logCorrente.some(r => {
         if (r.turnoInizio !== ini) return false;
         return (now - new Date(r.data)) < 48 * 60 * 60 * 1000;
       });
-      if (inLog) return true;
-      // 2) Fallback: controlla l'ultimo turno salvato separatamente
-      //    (resiste a cache clear e GitHub stale)
-      const u = S.get('ultimo_turno');
-      if (u && u.ini === ini && u.data) {
-        return (now - new Date(u.data)) < 48 * 60 * 60 * 1000;
-      }
-      return false;
     };
 
     // ── CASO 1: turno di ieri ancora IN CORSO adesso ──
@@ -661,8 +743,7 @@ async function fetchShift() {
       return now <= end;
     });
     if (inCorso) {
-      const titoloInCorso = (inCorso.summary || '').toUpperCase().trim();
-      todayShift = { titolo: inCorso.summary || 'Turno', inizio: new Date(inCorso.start.dateTime), fine: new Date(inCorso.end.dateTime), flhDisabilitato: titoloInCorso.startsWith('MNL') || titoloInCorso.startsWith('MRIP') };
+      todayShift = { titolo: inCorso.summary || 'Turno', inizio: new Date(inCorso.start.dateTime), fine: new Date(inCorso.end.dateTime), flhDisabilitato: !!inCorso._fmh };
       return todayShift;
     }
 
@@ -677,8 +758,7 @@ async function fetchShift() {
       return !giaLoggato(new Date(e.start.dateTime));
     });
     if (notturnoFinito) {
-      const titoloNott = (notturnoFinito.summary || '').toUpperCase().trim();
-      todayShift = { titolo: notturnoFinito.summary || 'Turno', inizio: new Date(notturnoFinito.start.dateTime), fine: new Date(notturnoFinito.end.dateTime), flhDisabilitato: titoloNott.startsWith('MNL') || titoloNott.startsWith('MRIP') };
+      todayShift = { titolo: notturnoFinito.summary || 'Turno', inizio: new Date(notturnoFinito.start.dateTime), fine: new Date(notturnoFinito.end.dateTime), flhDisabilitato: !!notturnoFinito._fmh };
       return todayShift;
     }
 
@@ -690,9 +770,7 @@ async function fetchShift() {
     });
     if (!turniOggi.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = turniOggi[0];
-    const titoloEv = (ev.summary || '').toUpperCase().trim();
-    const flhDisabilitato = titoloEv.startsWith('MNL') || titoloEv.startsWith('MRIP');
-    todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime), flhDisabilitato };
+    todayShift = { titolo: ev.summary || 'Turno', inizio: new Date(ev.start.dateTime), fine: new Date(ev.end.dateTime), flhDisabilitato: !!ev._fmh };
     return todayShift;
 
   } catch(e) {
@@ -701,9 +779,7 @@ async function fetchShift() {
   }
 }
 
-// ─────────────────────────────────────────────
-// RENDER: OGGI
-// ─────────────────────────────────────────────
+// ─── 10. RENDER OGGI ───────────────────────────────────────
 async function renderOggi(refresh) {
   const el = document.getElementById('oggi-content');
   if (refresh || !todayShift) {
@@ -767,14 +843,20 @@ async function renderOggi(refresh) {
     const durata = Math.round((todayShift.fine - todayShift.inizio) / 60000);
     const durataH = Math.floor(durata / 60);
     const durataM = durata % 60;
-    html += `<div class="shift-card">
-      <div class="shift-title">${todayShift.titolo}</div>
+    if (todayShift.flhDisabilitato) {
+      const tipoTag = todayShift.titolo.toUpperCase().startsWith('MNL') ? 'MNL' : 'MRIP';
+      html += `<div class="alert-banner" style="border-left-color:var(--yellow);background:rgba(251,191,36,.08);margin-bottom:8px">
+        ⚠️ <strong>Turno ${tipoTag}</strong> — Presenza ridotta · <strong>FMH</strong> attivo · non conta nel mensile
+      </div>`;
+    }
+    html += `<div class="shift-card" style="${todayShift.flhDisabilitato ? 'border-left-color:var(--yellow)' : ''}">
+      <div class="shift-title" style="${todayShift.flhDisabilitato ? 'color:var(--yellow)' : ''}">${todayShift.titolo}</div>
       <div class="shift-times">
         <span class="shift-time">${fmtTime(todayShift.inizio)}</span>
         <span class="shift-arrow">→</span>
         <span class="shift-time">${fmtTime(todayShift.fine)}</span>
       </div>
-      <div class="shift-delta">Durata prevista: ${durataH > 0 ? durataH + 'h ' : ''}${durataM}m${todayShift.flhDisabilitato ? ' &nbsp;·&nbsp; <span style="color:var(--yellow);font-size:11px">⚠️ FLH non applicabile (MNL/MRIP)</span>' : ''}</div>
+      <div class="shift-delta">Durata prevista: ${durataH > 0 ? durataH + 'h ' : ''}${durataM}m</div>
     </div>`;
   } else if (calendarError && calendarError !== 'setup') {
     html += `<div class="alert-banner error">📅 ${calendarError}</div>`;
@@ -819,6 +901,7 @@ async function renderOggi(refresh) {
   el.innerHTML = html;
 }
 
+// ─── 11. ARRIVO / USCITA ───────────────────────────────────
 function registraArrivo() {
   const ora = new Date().toISOString();
   S.set('arrivo', ora);
@@ -831,19 +914,14 @@ function modificaArrivo() {
   if (!oraStr) return;
   const [h, m] = oraStr.split(':').map(Number);
   if (isNaN(h) || isNaN(m)) { alert('Formato non valido'); return; }
-  // Fix BUG 7: usa la data dell'arrivo salvato come base, non new Date()
+ 
   const base = arrivoAttuale ? new Date(arrivoAttuale) : new Date();
   base.setHours(h, m, 0, 0);
   S.set('arrivo', base.toISOString());
   renderOggi(false);
 }
 
-// ─────────────────────────────────────────────
-// MODAL: USCITA
-// ─────────────────────────────────────────────
 let mensaScelto = null;
-let uscitaOverrideGlobal = null; // Fix BUG 1+2: mantiene uscitaOverride tra renderModalUscita e confermaUscita
-
 function apriModalUscitaManuale() {
   const arrivoSalvato = S.get('arrivo');
   const arrivoStr = prompt('Che ora sei arrivato? (HH:MM)', arrivoSalvato ? fmtTime(arrivoSalvato) : '');
@@ -873,8 +951,7 @@ function apriModalUscitaManuale() {
 
 function apriModalUscita(uscitaOverride) {
   mensaScelto = null;
-  uscitaOverrideGlobal = uscitaOverride || null; // Fix BUG 1+2
-  renderModalUscita(uscitaOverrideGlobal);
+  renderModalUscita();
   document.getElementById('modal-uscita').classList.add('open');
 }
 
@@ -889,7 +966,6 @@ function renderModalUscita(uscitaOverride) {
 
   let flhInfo = null;
   if (todayShift && arrivoISO) {
-    // FMH usa la stessa logica di calcolo, ma non conta nel totale mensile
     flhInfo = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
     if (todayShift.flhDisabilitato) flhInfo.disabilitato = true;
   }
@@ -937,25 +1013,23 @@ function renderModalUscita(uscitaOverride) {
 
 function scegliMensa(v) {
   mensaScelto = v;
-  renderModalUscita(uscitaOverrideGlobal); // Fix BUG 2
+  renderModalUscita();
 }
 
 function confermaUscita() {
   const arrivoISO = S.get('arrivo');
-  const uscitaOra = uscitaOverrideGlobal || new Date(); // Fix BUG 1
+  const uscitaOra = new Date();
 
   let flhResult = { testa: 0, coda: 0, straordinario: 0, tot: 0, fmt: '0h 00m' };
   const isFMH = todayShift && todayShift.flhDisabilitato;
   if (todayShift && arrivoISO) {
-    // Per MNL/MRIP si calcola il FMH normalmente (stessa logica)
-    // ma NON viene aggiunto al totale mensile FLH
     flhResult = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
   }
 
   // Salva nel log — usa la data di uscita come chiave giornaliera
   const riga = {
     data: uscitaOra.toISOString(),
-    dateFmt: fmtDate(new Date(arrivoISO || uscitaOra)), // Fix BUG 6: mostra la data del turno (arrivo)
+    dateFmt: fmtDate(new Date(arrivoISO || uscitaOra)),
     turno: todayShift ? todayShift.titolo : '—',
     turnoInizio: todayShift ? fmtTime(todayShift.inizio) : '—',
     turnoFine: todayShift ? fmtTime(todayShift.fine) : '—',
@@ -976,30 +1050,21 @@ function confermaUscita() {
   filtered.push(riga);
   S.set('log_corrente', filtered);
 
-  // Aggiorna totale mese — FMH (MNL/MRIP) NON si accumula nel mensile FLH
   const vecchioTot = S.get('mese_corrente') || 0;
   const vecchioConTurno = log.find(r => r.turnoInizio === riga.turnoInizio);
   const vecchioFlhTot = vecchioConTurno ? (vecchioConTurno.isFMH ? 0 : vecchioConTurno.flhTot) : 0;
   const base = vecchioTot - vecchioFlhTot;
   S.set('mese_corrente', Math.max(0, base + (isFMH ? 0 : flhResult.tot)));
 
-  // Reset
   S.del('arrivo');
-  uscitaOverrideGlobal = null;
-
-  // Salva separatamente l'ultimo turno registrato — usato da giaLoggato
-  // come fallback se il log principale viene perso (cache cleared, GitHub stale)
-  S.set('ultimo_turno', {
-    ini: riga.turnoInizio,
-    fine: riga.turnoFine,
-    data: riga.data,
-  });
+  logAdd('uscita', (isFMH?'FMH':'FLH') + ' registrato: ' + flhResult.fmt,
+    riga.arrivo + ' → ' + riga.uscita + ' | ' + (riga.turno||''));
 
   chiudiModal('modal-uscita');
   mostraRisultato(riga);
 
   ghSave().then(ok => {
-    if (!ok) console.warn('Salvataggio GitHub non riuscito — dati solo in locale');
+    if (!ok) logAdd('sync_err', 'Salvataggio GitHub fallito', 'Dati salvati solo in locale');
   });
 }
 
@@ -1032,9 +1097,7 @@ function mostraRisultato(riga) {
   document.getElementById('modal-risultato').classList.add('open');
 }
 
-// ─────────────────────────────────────────────
-// RENDER: MESE
-// ─────────────────────────────────────────────
+// ─── 12. RENDER MESE ───────────────────────────────────────
 function renderMese() {
   const totMin = S.get('mese_corrente') || 0;
   const log = S.get('log_corrente') || [];
@@ -1112,9 +1175,102 @@ function esportaMese() {
   setTimeout(() => alert('📂 File scaricato!\n\nSalvalo in:\nFile → Personale → Desktop → FLH\n(OneDrive personale)'), 400);
 }
 
-// ─────────────────────────────────────────────
-// RENDER: STORICO
-// ─────────────────────────────────────────────
+// ─── 13. ACTIVITY LOG ─────────────────────────────────────
+const LOG_MAX = 200; // righe massime in memoria
+
+function logAdd(tipo, messaggio, dettaglio) {
+  const voci = S.get('activity_log') || [];
+  voci.unshift({
+    ts: new Date().toISOString(),
+    tipo, // 'sync_ok' | 'sync_err' | 'arrivo' | 'uscita' | 'modifica' | 'archivio' | 'info' | 'merge'
+    msg: messaggio,
+    det: dettaglio || '',
+  });
+  if (voci.length > LOG_MAX) voci.length = LOG_MAX;
+  S.set('activity_log', voci);
+}
+
+function renderLog() {
+  const el = document.getElementById('log-content');
+  const voci = S.get('activity_log') || [];
+  const icone = {
+    sync_ok: '☁️', sync_err: '❌', arrivo: '🟢', uscita: '🔴',
+    modifica: '✏️', archivio: '📦', info: 'ℹ️', merge: '🔀',
+  };
+  let html = `<div style="padding:20px 20px 0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div class="section-title" style="margin:0">📋 Log operazioni</div>
+      <button class="btn-small" onclick="cancellaLog()">🗑️ Svuota</button>
+    </div>`;
+  if (!voci.length) {
+    html += `<div class="empty"><div class="ico">📋</div>Nessuna operazione registrata</div>`;
+  } else {
+    voci.forEach(v => {
+      const ico = icone[v.tipo] || 'ℹ️';
+      const d = new Date(v.ts);
+      const data = d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
+      const ora  = d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      const colore = v.tipo === 'sync_err' ? '#FCA5A5' :
+                     v.tipo === 'sync_ok'  ? '#6EE7B7' :
+                     v.tipo === 'merge'    ? '#93C5FD' : '#F0F0F0';
+      html += `<div style="padding:10px 0;border-bottom:1px solid #1a1a1a">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="display:flex;gap:8px;align-items:flex-start;min-width:0">
+            <span style="font-size:16px;flex-shrink:0">${ico}</span>
+            <div style="min-width:0">
+              <div style="font-size:13px;color:${colore};font-weight:500">${v.msg}</div>
+              ${v.det ? `<div style="font-size:11px;color:#555;margin-top:2px;font-family:monospace;word-break:break-all">${v.det}</div>` : ''}
+            </div>
+          </div>
+          <div style="font-size:10px;color:#444;font-family:monospace;flex-shrink:0;text-align:right">
+            ${data}<br>${ora}
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function cancellaLog() {
+  if (confirm('Svuotare il log operazioni?')) {
+    S.del('activity_log');
+    renderLog();
+  }
+}
+
+// ─── 14. ARCHIVIO PER ANNO ─────────────────────────────────
+async function archiviaMeseGitHub(mese, datiMese) {
+  const cfg = getConfig();
+  if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return;
+  const anno = mese.slice(0, 4); // es. "2026"
+  const filename = `archivio_${anno}.json`;
+
+  // Leggi archivio anno corrente da GitHub
+  const result = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, filename);
+  let archAnno = result && result.content ? result.content : {};
+  const sha = result ? result.sha : null;
+
+  // Aggiungi o aggiorna il mese
+  archAnno[mese] = datiMese;
+
+  const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, archAnno, sha, filename);
+  if (newSha) {
+    logAdd('archivio', `Mese ${mese} archiviato su GitHub`, filename);
+  } else {
+    logAdd('sync_err', `Errore archivio ${mese}`, filename);
+  }
+}
+
+async function caricaArchivioAnno(anno) {
+  const cfg = getConfig();
+  if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return null;
+  const result = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, `archivio_${anno}.json`);
+  return result && result.content ? result.content : null;
+}
+
+// ─── 15. STORICO ───────────────────────────────────────────
 function renderStorico() {
   const archivio = S.get('archivio') || [];
   let html = '<div style="padding:0 20px">';
@@ -1185,9 +1341,7 @@ function esportaStorico() {
   setTimeout(() => alert('📂 File scaricato!\n\nSalvalo in:\nFile → Personale → Desktop → FLH\n(OneDrive personale)'), 400);
 }
 
-// ─────────────────────────────────────────────
-// MODIFICA MANUALE GIORNI
-// ─────────────────────────────────────────────
+// ─── 16. MODIFICA LOG ──────────────────────────────────────
 let editIdx = null;
 
 function apriModificaGiorno(idx) {
@@ -1278,10 +1432,10 @@ function salvaModificaGiorno() {
   };
   S.set('log_corrente', log);
 
-  // Aggiorna totale mese
   const tot = (S.get('mese_corrente') || 0) - vecchioFlh + flh.tot;
   S.set('mese_corrente', Math.max(0, tot));
 
+  logAdd('modifica', 'Giorno modificato: ' + r.dateFmt, r.arrivo + ' → ' + r.uscita + ' → ' + flh.fmt);
   chiudiModal('modal-modifica');
   ghSave();
   renderMese();
@@ -1291,15 +1445,19 @@ function salvaModificaGiorno() {
 function eliminaGiorno(idx) {
   if (!confirm('Eliminare questo giorno dal log?')) return;
   const log = S.get('log_corrente') || [];
-  const vecchioFlh = log[idx] ? log[idx].flhTot : 0;
+  const riga = log[idx];
+  const vecchioFlh = riga ? riga.flhTot : 0;
+  const dateFmtEliminato = riga ? riga.dateFmt : '';
   log.splice(idx, 1);
   S.set('log_corrente', log);
   const tot = Math.max(0, (S.get('mese_corrente') || 0) - vecchioFlh);
   S.set('mese_corrente', tot);
+  logAdd('modifica', 'Giorno eliminato: ' + dateFmtEliminato, '');
   chiudiModal('modal-modifica');
   ghSave();
   renderMese();
 }
+// ─── 17. SETUP ─────────────────────────────────────────────
 function renderSetup() {
   const cfg = getConfig();
   document.getElementById('setup-content').innerHTML = `
@@ -1371,6 +1529,62 @@ function renderSetup() {
 
     <button class="btn-main arrival" onclick="salvaConfig()">✅ Salva impostazioni</button>
     <div style="height:16px"></div>
+
+    <div class="section-title" style="margin-top:8px">🔐 Backup & Ripristino</div>
+    <div class="alert-banner" style="margin-bottom:12px;font-size:12px">
+      Tre modi per ripristinare le impostazioni su qualsiasi dispositivo — scegli quello più comodo.
+    </div>
+
+    <!-- SALVA TUTTO IN UN ZIP -->
+    <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:600;color:#F59E0B;margin-bottom:4px">📦 Salva tutto il backup</div>
+      <div style="font-size:11px;color:#888;margin-bottom:10px">Scarica un file ZIP con QR code, link di ripristino e istruzioni PIN — tutto in una cartella.</div>
+      <button class="btn-main arrival" style="font-size:14px" onclick="salvaBackupCompleto()">💾 Scarica cartella backup</button>
+      <div id="backup-status" style="font-size:11px;color:#666;margin-top:8px;text-align:center;display:none"></div>
+    </div>
+
+    <!-- OPZIONE 1: QR CODE -->
+    <div style="background:#111;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:#F0F0F0;margin-bottom:4px">📲 QR Code <span style="font-size:10px;color:#555;font-weight:400">— per iPhone/iPad con fotocamera</span></div>
+      <div style="font-size:11px;color:#666;margin-bottom:10px">Genera un QR, fai screenshot, salvalo in Foto. Per ripristinare scansi l'immagine.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" style="flex:1;font-size:12px" onclick="generaQR()">Genera QR</button>
+        <button class="btn-secondary" style="flex:1;font-size:12px" onclick="scansionaQR()">Scansiona QR</button>
+      </div>
+      <div id="qr-container" style="display:none;text-align:center;padding:16px">
+        <div id="qr-canvas" style="display:inline-block"></div>
+        <div style="font-size:11px;color:#555;margin-top:8px">Fai screenshot e salvalo in Foto</div>
+      </div>
+      <input type="file" id="qr-file-input" accept="image/*" style="display:none" onchange="leggiQRdaFile(event)">
+    </div>
+
+    <!-- OPZIONE 2: LINK DI RIPRISTINO -->
+    <div style="background:#111;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:#F0F0F0;margin-bottom:4px">🔗 Link di ripristino <span style="font-size:10px;color:#555;font-weight:400">— per qualsiasi dispositivo</span></div>
+      <div style="font-size:11px;color:#666;margin-bottom:10px">Genera un link, salvalo in Note o Segnalibri. Aprilo su qualsiasi browser per ripristinare.</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" style="flex:1;font-size:12px" onclick="generaLink()">Genera link</button>
+      </div>
+      <div id="link-container" style="display:none;margin-top:10px">
+        <textarea id="link-output" readonly style="width:100%;height:60px;background:#0a0a0a;border:1px solid #333;border-radius:8px;color:#F59E0B;font-size:10px;padding:8px;resize:none;font-family:monospace;box-sizing:border-box"></textarea>
+        <button class="btn-secondary" style="width:100%;margin-top:6px;font-size:12px" onclick="copiaLink()">📋 Copia link</button>
+      </div>
+    </div>
+
+    <!-- OPZIONE 3: PIN -->
+    <div style="background:#111;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;color:#F0F0F0;margin-bottom:4px">🔑 PIN <span style="font-size:10px;color:#555;font-weight:400">— più sicuro, richiede GitHub configurato</span></div>
+      <div style="font-size:11px;color:#666;margin-bottom:10px">Cifra le impostazioni con un PIN e le salva su GitHub. Per ripristinare inserisci solo il PIN.</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="pin-input" type="number" placeholder="PIN (min 4 cifre)" maxlength="8"
+          style="flex:1;background:#0a0a0a;border:1px solid #333;border-radius:8px;color:#F0F0F0;
+                 padding:10px 12px;font-size:14px;font-family:monospace">
+        <button class="btn-secondary" style="font-size:12px;white-space:nowrap" onclick="salvaConPIN()">Salva PIN</button>
+      </div>
+      <button class="btn-secondary" style="width:100%;font-size:12px" onclick="ripristinaConPIN()">🔓 Ripristina con PIN</button>
+    </div>
+
+    <div class="divider"></div>
     <div class="section-title" style="margin-top:8px">Zona pericolo</div>
     <button class="export-btn" style="border-color:var(--red);color:#FCA5A5" onclick="resetDati()">
       <span class="ico">🗑️</span><span>Elimina tutti i dati</span>
@@ -1392,29 +1606,23 @@ function salvaConfig() {
   };
   S.set('config', cfg);
 
-  // Aggiorna l'URL hash con la configurazione
-  const params = new URLSearchParams();
-  if (cfg.apiKey) params.set('k', cfg.apiKey);
-  if (cfg.calendarId) params.set('c', cfg.calendarId);
-  if (cfg.workRadius !== 150) params.set('r', cfg.workRadius);
-  if (cfg.workLat !== 41.9248) params.set('lat', cfg.workLat);
-  if (cfg.workLng !== 12.4598) params.set('lng', cfg.workLng);
-  if (cfg.ghToken) params.set('gt', cfg.ghToken);
-  if (cfg.ghOwner) params.set('go', cfg.ghOwner);
-  if (cfg.ghRepo) params.set('gr', cfg.ghRepo);
-  const baseUrl = window.location.pathname;
-  const hashPart = params.toString() ? '#' + params.toString() : '';
-  const newUrl = baseUrl + hashPart;
-  window.history.replaceState(null, '', newUrl);
+  const origin = window.location.origin;
+  const path   = window.location.pathname;
+  const urlHome   = origin + path;
+  const urlArrivo = origin + path + '?action=arrivo';
+  const urlUscita = origin + path + '?action=uscita';
 
-  const urlArrivo = window.location.origin + baseUrl + '?action=arrivo' + hashPart;
-  const urlUscita = window.location.origin + baseUrl + '?action=uscita' + hashPart;
+  // Aggiorna URL senza hash
+  window.history.replaceState(null, '', path);
+
+  // Salva anche su GitHub così le impostazioni sopravvivono alla cache
+  ghSave();
 
   alert('✅ Impostazioni salvate!\n\n' +
-    '📌 URL per la schermata Home:\n' + window.location.href + '\n\n' +
-    '🔵 URL Shortcut FLH ARRIVO:\n' + urlArrivo + '\n\n' +
-    '🔴 URL Shortcut FLH USCITA:\n' + urlUscita + '\n\n' +
-    'Copia ognuno nella shortcut corrispondente in Comandi.');
+    '📌 URL schermata Home (fisso per sempre):\n' + urlHome + '\n\n' +
+    '🔵 URL Shortcut FLH ARRIVO (fisso):\n' + urlArrivo + '\n\n' +
+    '🔴 URL Shortcut FLH USCITA (fisso):\n' + urlUscita + '\n\n' +
+    'Questi URL non cambiano mai — configurali una volta sola nelle Shortcut.');
   navTo('oggi');
   renderOggi(true);
 }
@@ -1427,18 +1635,404 @@ function calibraPosizione() {
   }, () => alert('❌ Impossibile rilevare la posizione. Assicurati che il GPS sia attivo.'));
 }
 
+// ─── 18. BACKUP ────────────────────────────────────────────
+// ── SALVA TUTTO IL BACKUP (ZIP) ─────────────────────────────
+// Genera un file ZIP con 3 file nella cartella FLH_Backup:
+//   1. qr_backup.png    — QR code con le credenziali
+//   2. link_ripristino.txt — URL di ripristino
+//   3. istruzioni.txt   — guida PIN e info generali
+async function salvaBackupCompleto() {
+  const cfg = getConfig();
+  if (!cfg.apiKey && !cfg.ghToken) {
+    alert('⚠️ Nessuna impostazione da salvare.\nConfigura prima API Key e GitHub Token in ⚙️.');
+    return;
+  }
+
+  const status = document.getElementById('backup-status');
+  status.style.display = 'block';
+  status.textContent = '⏳ Generazione in corso...';
+
+  try {
+    const zip = new JSZip();
+    const cartella = zip.folder('FLH_Backup');
+    const data = new Date().toLocaleDateString('it-IT');
+
+    // ── File 1: link_ripristino.txt ──────────────────────────
+    const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
+      k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
+      lat: cfg.workLat, lng: cfg.workLng,
+      gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
+    }))));
+    const linkRipristino = window.location.origin + window.location.pathname + '?restore=' + payload;
+    cartella.file('link_ripristino.txt',
+      'FLH Tracker — Link di ripristino\n' +
+      'Generato il: ' + data + '\n\n' +
+      'COME USARE:\n' +
+      'Apri questo link in Safari su qualsiasi dispositivo.\n' +
+      'Le impostazioni verranno ripristinate automaticamente.\n\n' +
+      'LINK:\n' + linkRipristino + '\n'
+    );
+
+    // ── File 2: QR code come PNG ─────────────────────────────
+    status.textContent = '⏳ Generazione QR...';
+    const qrPng = await new Promise((resolve, reject) => {
+      const div = document.createElement('div');
+      div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+      document.body.appendChild(div);
+      const qr = new QRCode(div, {
+        text: JSON.stringify({
+          k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
+          lat: cfg.workLat, lng: cfg.workLng,
+          gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
+        }),
+        width: 300, height: 300,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      setTimeout(() => {
+        try {
+          const canvas = div.querySelector('canvas');
+          if (!canvas) { reject(new Error('Canvas non trovato')); return; }
+          canvas.toBlob(blob => {
+            document.body.removeChild(div);
+            resolve(blob);
+          }, 'image/png');
+        } catch(e) { document.body.removeChild(div); reject(e); }
+      }, 500);
+    });
+    cartella.file('qr_backup.png', qrPng);
+
+    // ── File 3: istruzioni.txt ───────────────────────────────
+    const pinInput = document.getElementById('pin-input');
+    const pinSalvato = pinInput && pinInput.value ? '✅ PIN salvato su GitHub' : '⚠️ PIN non ancora impostato — vai in ⚙️ → Backup → PIN';
+    cartella.file('istruzioni.txt',
+      '╔══════════════════════════════════════╗\n' +
+      '║    FLH TRACKER — Guida Ripristino   ║\n' +
+      '╚══════════════════════════════════════╝\n\n' +
+      'Generato il: ' + data + '\n' +
+      'Utente: ' + (cfg.ghOwner || 'non configurato') + '\n\n' +
+      '── METODO 1: QR CODE (più veloce) ────────────\n' +
+      'File: qr_backup.png\n' +
+      'Come usare:\n' +
+      '1. Apri il file qr_backup.png\n' +
+      '2. Nell\'app → ⚙️ → Backup → Scansiona QR\n' +
+      '3. Seleziona l\'immagine → impostazioni ripristinate\n\n' +
+      '── METODO 2: LINK (universale) ───────────────\n' +
+      'File: link_ripristino.txt\n' +
+      'Come usare:\n' +
+      '1. Apri link_ripristino.txt\n' +
+      '2. Copia il link\n' +
+      '3. Incollalo in Safari → impostazioni ripristinate\n\n' +
+      '── METODO 3: PIN (più sicuro) ────────────────\n' +
+      'Stato: ' + pinSalvato + '\n' +
+      'Come usare:\n' +
+      '1. Apri l\'app → ⚙️ → Backup → PIN\n' +
+      '2. Inserisci il PIN che hai scelto\n' +
+      '3. Tocca Ripristina con PIN\n' +
+      'NOTA: richiede GitHub Token già configurato\n\n' +
+      '── URL APP ───────────────────────────────────\n' +
+      window.location.origin + window.location.pathname + '\n'
+    );
+
+    // ── Genera ZIP e apre il foglio di condivisione iOS ─────
+    status.textContent = '⏳ Compressione ZIP...';
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const nomeFile = 'FLH_Backup_' + data.replace(/\//g, '-') + '.zip';
+
+    // Web Share API — apre il foglio di condivisione nativo iOS
+    // (Files, iCloud Drive, OneDrive, AirDrop, Note, ecc.)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], nomeFile)] })) {
+      const file = new File([blob], nomeFile, { type: 'application/zip' });
+      await navigator.share({
+        title: 'FLH Backup',
+        text: 'Backup impostazioni FLH Tracker',
+        files: [file],
+      });
+    } else {
+      // Fallback per browser desktop — download diretto
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = nomeFile;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    status.style.color = '#6EE7B7';
+    status.textContent = '✅ ZIP scaricato! Salvalo in File → iCloud Drive o OneDrive';
+    logAdd('info', 'Backup completo ZIP scaricato', '3 file: QR, link, istruzioni');
+
+    setTimeout(() => {
+      status.style.display = 'none';
+      status.style.color = '';
+    }, 5000);
+
+  } catch(e) {
+    status.style.color = '#FCA5A5';
+    status.textContent = '❌ Errore: ' + e.message;
+    console.error('Backup error:', e);
+  }
+}
+
+function generaLink() {
+  const cfg = getConfig();
+  if (!cfg.apiKey && !cfg.ghToken) {
+    alert('⚠️ Nessuna impostazione da salvare. Configura prima API Key e GitHub Token.');
+    return;
+  }
+  const payload = btoa(unescape(encodeURIComponent(JSON.stringify({
+    k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
+    lat: cfg.workLat, lng: cfg.workLng,
+    gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
+  }))));
+  const link = window.location.origin + window.location.pathname + '?restore=' + payload;
+  document.getElementById('link-container').style.display = 'block';
+  document.getElementById('link-output').value = link;
+}
+
+function copiaLink() {
+  const txt = document.getElementById('link-output').value;
+  navigator.clipboard.writeText(txt).then(() => alert('✅ Link copiato!\nSalvalo in Note o Segnalibri.'));
+}
+
+// Gestisce ?restore= all'avvio
+function checkRestoreLink() {
+  const params = new URLSearchParams(window.location.search);
+  const restore = params.get('restore');
+  if (!restore) return false;
+  try {
+    const d = JSON.parse(decodeURIComponent(escape(atob(restore))));
+    const cfg = {
+      apiKey: d.k || '', calendarId: d.c || '',
+      workRadius: d.r || 150, workLat: d.lat || 41.9248, workLng: d.lng || 12.4598,
+      ghToken: d.gt || '', ghOwner: d.go || '', ghRepo: d.gr || '',
+    };
+    S.set('config', cfg);
+    window.history.replaceState(null, '', window.location.pathname);
+    alert('✅ Impostazioni ripristinate dal link!\nRiconnessione a GitHub in corso...');
+    ghLoad().then(ok => {
+      if (ok) { controllaCambioMese(); alert('✅ Dati ripristinati da GitHub!'); }
+      navTo('oggi');
+      renderOggi(true);
+    });
+    return true;
+  } catch(e) {
+    alert('❌ Link non valido o danneggiato.');
+    return false;
+  }
+}
+
+async function derivaChiave(pin, salt) {
+  const enc = new TextEncoder();
+  const keyMat = await crypto.subtle.importKey('raw', enc.encode(String(pin)), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMat, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+  );
+}
+
+async function salvaConPIN() {
+  const pin = document.getElementById('pin-input').value.trim();
+  if (!pin || pin.length < 4) { alert('⚠️ Inserisci un PIN di almeno 4 cifre.'); return; }
+  const cfg = getConfig();
+  if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) {
+    alert('⚠️ Configura prima GitHub Token, Username e Repository.');
+    return;
+  }
+  try {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv   = crypto.getRandomValues(new Uint8Array(12));
+    const key  = await derivaChiave(pin, salt);
+    const payload = new TextEncoder().encode(JSON.stringify({
+      k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
+      lat: cfg.workLat, lng: cfg.workLng,
+      gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
+    }));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, payload);
+    // Salva su GitHub come file separato
+    const blob = {
+      salt: Array.from(salt), iv: Array.from(iv),
+      data: Array.from(new Uint8Array(ciphertext)),
+    };
+    const sha = S.get('pin_sha');
+    const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo,
+      blob, sha, 'config_pin.json');
+    if (newSha) {
+      S.set('pin_sha', newSha);
+      alert('✅ Backup con PIN salvato su GitHub!\n\nRicorda il PIN: ' + pin + '\nSenza di esso non potrai ripristinare le impostazioni.');
+    } else {
+      alert('❌ Errore nel salvataggio su GitHub. Controlla le impostazioni GitHub.');
+    }
+  } catch(e) {
+    alert('❌ Errore: ' + e.message);
+  }
+}
+
+async function ripristinaConPIN() {
+  const pin = prompt('Inserisci il PIN di ripristino:');
+  if (!pin) return;
+  const cfg = getConfig();
+  if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) {
+    alert('⚠️ Per usare il PIN serve almeno il GitHub Token, Username e Repository già configurati.\nUsa il QR o il Link per il ripristino completo.');
+    return;
+  }
+  try {
+    const result = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, 'config_pin.json');
+    if (!result || !result.content) { alert('❌ Nessun backup PIN trovato su GitHub.'); return; }
+    const blob = result.content;
+    const salt = new Uint8Array(blob.salt);
+    const iv   = new Uint8Array(blob.iv);
+    const data = new Uint8Array(blob.data);
+    const key  = await derivaChiave(pin, salt);
+    const dec  = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+    const d    = JSON.parse(new TextDecoder().decode(dec));
+    const restored = {
+      apiKey: d.k || '', calendarId: d.c || '',
+      workRadius: d.r || 150, workLat: d.lat || 41.9248, workLng: d.lng || 12.4598,
+      ghToken: d.gt || '', ghOwner: d.go || '', ghRepo: d.gr || '',
+    };
+    S.set('config', restored);
+    alert('✅ Impostazioni ripristinate con PIN!\nRiconnessione a GitHub in corso...');
+    ghLoad().then(ok => {
+      if (ok) { controllaCambioMese(); alert('✅ Dati ripristinati da GitHub!'); }
+      navTo('oggi');
+      renderOggi(true);
+    });
+  } catch(e) {
+    alert('❌ PIN errato o dati corrotti.');
+  }
+}
+function generaQR() {
+  const cfg = getConfig();
+  if (!cfg.apiKey && !cfg.ghToken) {
+    alert('⚠️ Nessuna impostazione da salvare.\nConfigura prima API Key e GitHub Token.');
+    return;
+  }
+  const payload = JSON.stringify({
+    k: cfg.apiKey,
+    c: cfg.calendarId,
+    r: cfg.workRadius,
+    lat: cfg.workLat,
+    lng: cfg.workLng,
+    gt: cfg.ghToken,
+    go: cfg.ghOwner,
+    gr: cfg.ghRepo,
+  });
+
+  const container = document.getElementById('qr-container');
+  const canvas = document.getElementById('qr-canvas');
+  canvas.innerHTML = '';
+  container.style.display = 'block';
+
+  new QRCode(canvas, {
+    text: payload,
+    width: 220,
+    height: 220,
+    colorDark: '#F0F0F0',
+    colorLight: '#111111',
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+}
+
+function scansionaQR() {
+  // Su iOS la fotocamera si apre tramite input file con capture
+  document.getElementById('qr-file-input').click();
+}
+
+function leggiQRdaFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const cv = document.createElement('canvas');
+      cv.width = img.width;
+      cv.height = img.height;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, cv.width, cv.height);
+      const code = jsQR(imgData.data, imgData.width, imgData.height);
+      if (!code) { alert('❌ QR non riconosciuto. Riprova con uno screenshot più nitido.'); return; }
+      try {
+        const d = JSON.parse(code.data);
+        const cfg = {
+          apiKey:     d.k  || '',
+          calendarId: d.c  || '',
+          workRadius: d.r  || 150,
+          workLat:    d.lat || 41.9248,
+          workLng:    d.lng || 12.4598,
+          ghToken:    d.gt || '',
+          ghOwner:    d.go || '',
+          ghRepo:     d.gr || '',
+        };
+        S.set('config', cfg);
+        alert('✅ Impostazioni ripristinate dal QR!\n\nRiconnessione a GitHub in corso...');
+        // Ricarica dati da GitHub
+        ghLoad().then(ok => {
+          if (ok) {
+            controllaCambioMese();
+            alert('✅ Dati ripristinati da GitHub!');
+          }
+          navTo('oggi');
+          renderOggi(true);
+        });
+      } catch(err) {
+        alert('❌ QR non valido o danneggiato.');
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  // Reset input per permettere di riscansionare lo stesso file
+  event.target.value = '';
+}
+
 function resetDati() {
   if (confirm('Eliminare TUTTI i dati FLH? Questa azione è irreversibile.')) {
-    ['config','arrivo','mese_attivo','mese_corrente','log_corrente','archivio','ultimo_turno','gh_sha'].forEach(k => S.del(k));
+    ['config','arrivo','uscita_provvisoria','mese_attivo','mese_corrente','log_corrente','archivio','gh_sha'].forEach(k => S.del(k));
     alert('Dati eliminati.');
     location.reload();
   }
 }
 
-// ─────────────────────────────────────────────
-// NAVIGATION
-// ─────────────────────────────────────────────
-const screens = ['oggi', 'mese', 'storico', 'setup'];
+
+// Finalizza un'uscita provvisoria calcolando il FLH
+// Chiamata quando il turno è finito e non c'è stato rientro
+async function finalizzaUscitaProvvisoria(uscitaProvv) {
+  await fetchShift();
+  const arrivoISO = uscitaProvv.arrivoISO;
+  const uscitaOra = new Date(uscitaProvv.ts);
+  const arrivoFmt = new Date(arrivoISO).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  const uscitaFmt = uscitaOra.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  let flh = { testa:0, coda:0, straordinario:0, tot:0, fmt:'0h 00m' };
+  if (todayShift && arrivoISO) flh = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
+  const isFMH = !!(todayShift && todayShift.flhDisabilitato);
+  const riga = {
+    data: uscitaOra.toISOString(), dateFmt: fmtDate(uscitaOra),
+    turno: todayShift ? todayShift.titolo : '—',
+    turnoInizio: todayShift ? fmtTime(todayShift.inizio) : '—',
+    turnoFine:   todayShift ? fmtTime(todayShift.fine)   : '—',
+    arrivo: arrivoFmt, uscita: uscitaFmt, mensa: 'si',
+    flhTesta: flh.testa, flhCoda: flh.coda, flhStraordinario: flh.straordinario||0,
+    flhTot: flh.tot, flhFmt: flh.fmt, isFMH,
+  };
+  const log = S.get('log_corrente') || [];
+  const filtered = log.filter(r => !isToday(r.data));
+  filtered.push(riga);
+  S.set('log_corrente', filtered);
+  const vecchioOggi   = log.find(r => isToday(r.data));
+  const vecchioFlhTot = vecchioOggi ? (vecchioOggi.isFMH ? 0 : vecchioOggi.flhTot) : 0;
+  S.set('mese_corrente', Math.max(0, (S.get('mese_corrente')||0) - vecchioFlhTot + (isFMH ? 0 : flh.tot)));
+  S.del('uscita_provvisoria');
+  S.del('arrivo');
+  logAdd('uscita', (isFMH?'FMH':'FLH') + ' finalizzato: ' + flh.fmt, arrivoFmt + ' → ' + uscitaFmt);
+  ghSave();
+  return { flh, isFMH, arrivoFmt, uscitaFmt };
+}
+
+// ─── 19. NAV + INIT ────────────────────────────────────────
+const screens = ['oggi', 'mese', 'storico', 'log', 'setup'];
 
 function navTo(name) {
   screens.forEach(s => {
@@ -1453,6 +2047,7 @@ function navTo(name) {
 
   if (name === 'mese') renderMese();
   if (name === 'storico') renderStorico();
+  if (name === 'log') renderLog();
   if (name === 'setup') renderSetup();
 }
 
@@ -1471,67 +2066,169 @@ document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', e => { if (e.target === o) chiudiModal(o.id); });
 });
 
-// ─────────────────────────────────────────────
-// AUTO-UPDATE: controlla nuova versione da GitHub
-// ─────────────────────────────────────────────
-(async function checkUpdate() {
-  try {
-    // Aggiunge timestamp per bypassare cache
-    const url = window.location.pathname + '?v=' + Date.now() + window.location.hash;
-    const resp = await fetch(url, { cache: 'no-store' });
-    if (!resp.ok) return;
-    const html = await resp.text();
-    // Cerca VERSION nel nuovo file
-    const newVerMatch = html.match(/const APP_VERSION = '([^']+)'/);
-    const curVerMatch = document.documentElement.outerHTML.match(/const APP_VERSION = '([^']+)'/);
-    const newVer = newVerMatch ? newVerMatch[1] : null;
-    const curVer = curVerMatch ? curVerMatch[1] : null;
-    if (newVer && curVer && newVer !== curVer) {
-      // Nuova versione disponibile — ricarica silenziosamente
-      window.location.reload(true);
-    }
-  } catch(e) { /* offline — ignora */ }
-})();
 controllaCambioMese();
 
 // INIT asincrono — carica da GitHub poi avvia
 (async function init() {
+  // Controlla se c'è un link di ripristino nell'URL
+  if (checkRestoreLink()) return;
+
   // Sync da GitHub (se configurato) — aggiorna localStorage con dati remoti
   const synced = await ghLoad();
   if (synced) controllaCambioMese();
 
+  // Verifica uscita provvisoria pendente — logica basata sul turno:
+  // se il turno è finito e non sei rientrato → FLH reale, altrimenti aspetta
+  const uscitaProvv = S.get('uscita_provvisoria');
+  if (uscitaProvv) {
+    await fetchShift(); // carica il turno per sapere quando finisce
+    const now = new Date();
+    const turnoFine = todayShift ? todayShift.fine : null;
+    const turnoFinito = turnoFine && now > turnoFine;
+    if (turnoFinito) {
+      // Il turno è finito → finalizza FLH con l'orario dell'uscita reale
+      await finalizzaUscitaProvvisoria(uscitaProvv);
+    }
+    // Turno ancora in corso → non fare nulla, potrebbe rientrare
+  }
+
   // Gestione azione da URL (es. ?action=arrivo o ?action=uscita)
   // Usato dalle iOS Shortcuts geofence per automazione
   (function handleUrlAction() {
-    const params = new URLSearchParams(window.location.search);
-    const action = params.get('action');
+    // URL fissi: ?action=arrivo o ?action=uscita — nessun hash
+    const qsParams = new URLSearchParams(window.location.search);
+    const action = qsParams.get('action');
     if (!action) return;
-
-    const cleanUrl = window.location.pathname + window.location.hash;
-    window.history.replaceState(null, '', cleanUrl);
+    // Pulisce la querystring senza ricaricare
+    window.history.replaceState(null, '', window.location.pathname);
 
     if (action === 'arrivo') {
-      const ora = new Date().toISOString();
-      S.set('arrivo', ora);
-      renderOggi(true).then(() => {
-        const banner = document.createElement('div');
-        banner.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top)+60px);left:50%;transform:translateX(-50%);background:#10B981;color:#fff;padding:10px 20px;border-radius:20px;font-size:14px;font-weight:600;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.3)';
-        banner.textContent = '✅ Arrivo registrato: ' + new Date().toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'});
-        document.body.appendChild(banner);
-        setTimeout(() => banner.remove(), 3000);
-      });
-    } else if (action === 'uscita') {
-      renderOggi(true).then(() => {
-        const arrivoOggi = S.get('arrivo');
-        if (!arrivoOggi || !isArrivoValido(arrivoOggi)) {
-          S.set('arrivo', new Date().toISOString());
-          alert('⚠️ Nessun arrivo registrato oggi.\nHo impostato l\'ora attuale come arrivo — modificala se necessario.');
-          renderOggi(false);
+      const now = new Date();
+      const arrivoEsistente = S.get('arrivo');
+      const uscitaProvv    = S.get('uscita_provvisoria');
+
+      if (uscitaProvv) {
+        // C'è un'uscita provvisoria — logica basata sul turno
+        await fetchShift();
+        const turnoFine   = todayShift ? todayShift.fine : null;
+        const turnoFinito = turnoFine && now > turnoFine;
+
+        if (turnoFinito) {
+          // Turno finito → eri uscito definitivamente, finalizza FLH poi registra rientro
+          const res = await finalizzaUscitaProvvisoria(uscitaProvv);
+          // Poi registra nuovo arrivo come inizio del turno successivo
+          S.set('arrivo', now.toISOString());
+          const oraFmt = now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+          logAdd('arrivo', 'Nuovo arrivo (post turno): ' + oraFmt, '');
+          ghSave();
+          document.body.innerHTML = `
+            <div style="height:100vh;display:flex;flex-direction:column;align-items:center;
+                        justify-content:center;background:#090909;gap:14px;padding:40px;font-family:sans-serif">
+              <div style="font-size:52px">✅</div>
+              <div style="font-size:18px;font-weight:700;color:#F0F0F0">Turno precedente chiuso</div>
+              <div style="font-size:28px;font-weight:700;color:#F59E0B;font-family:monospace">${res.flh.fmt}</div>
+              <div style="font-size:13px;color:#888;font-family:monospace">${res.arrivoFmt} → ${res.uscitaFmt}</div>
+              <div style="height:1px;background:#222;width:100%;max-width:280px"></div>
+              <div style="font-size:16px;font-weight:600;color:#F0F0F0">Nuovo arrivo: ${oraFmt}</div>
+              <div style="font-size:13px;color:#555;margin-top:8px">Puoi chiudere Safari</div>
+            </div>`;
+        } else {
+          // Turno non ancora finito → rientro valido, uscita era una pausa → annulla provvisoria
+          const uscitaFmt = new Date(uscitaProvv.ts).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+          const rientraFmt = now.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+          S.del('uscita_provvisoria');
+          logAdd('info', 'Rientro — pausa annullata (turno in corso)',
+            'Uscita ' + uscitaFmt + ' → Rientro ' + rientraFmt);
+          document.body.innerHTML = `
+            <div style="height:100vh;display:flex;flex-direction:column;align-items:center;
+                        justify-content:center;background:#090909;gap:16px;padding:40px;font-family:sans-serif">
+              <div style="font-size:52px">🔄</div>
+              <div style="font-size:20px;font-weight:700;color:#F0F0F0">Bentornato in ufficio</div>
+              <div style="font-size:14px;color:#888;text-align:center;max-width:280px">
+                Pausa rilevata — nessun FLH calcolato<br>
+                <span style="color:#555;font-size:12px">Il turno era ancora in corso</span>
+              </div>
+              <div style="font-size:13px;color:#555;margin-top:12px">Puoi chiudere Safari</div>
+            </div>`;
         }
-        setTimeout(() => apriModalUscita(), 500);
-      });
+        return;
+      }
+
+      // Arrivo già registrato oggi (senza uscita provvisoria) → bentornato senza azione
+      if (arrivoEsistente && isArrivoValido(arrivoEsistente)) {
+        const arrivoFmt = new Date(arrivoEsistente).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+        document.body.innerHTML = `
+          <div style="height:100vh;display:flex;flex-direction:column;align-items:center;
+                      justify-content:center;background:#090909;gap:16px;padding:40px;font-family:sans-serif">
+            <div style="font-size:52px">👋</div>
+            <div style="font-size:20px;font-weight:700;color:#F0F0F0">Già in ufficio</div>
+            <div style="font-size:14px;color:#888">Arrivo originale: ${arrivoFmt}</div>
+            <div style="font-size:13px;color:#555;margin-top:12px">Puoi chiudere Safari</div>
+          </div>`;
+        return;
+      }
+
+      // Primo arrivo del giorno
+      S.set('arrivo', now.toISOString());
+      const oraFmt = now.toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'});
+      logAdd('arrivo', 'Arrivo registrato', oraFmt);
+      ghSave();
+      document.body.innerHTML = `
+        <div style="height:100vh;display:flex;flex-direction:column;align-items:center;
+                    justify-content:center;background:#090909;gap:16px;padding:40px;font-family:sans-serif">
+          <div style="font-size:60px">✅</div>
+          <div style="font-size:22px;font-weight:700;color:#F0F0F0">Arrivo registrato</div>
+          <div style="font-size:36px;font-weight:700;color:#F59E0B;font-family:monospace">${oraFmt}</div>
+          <div style="font-size:13px;color:#555;margin-top:12px">Puoi chiudere Safari</div>
+        </div>`;
+
+    } else if (action === 'uscita') {
+      // Salva uscita PROVVISORIA — non calcola FLH finché non scatta la tolleranza 30 min
+      (async () => {
+        await Promise.all([checkGeo(), fetchShift()]);
+        controllaCambioMese();
+        const uscitaOra  = new Date();
+        let arrivoISO    = S.get('arrivo');
+        if (!arrivoISO || !isArrivoValido(arrivoISO)) {
+          arrivoISO = new Date().toISOString();
+          S.set('arrivo', arrivoISO);
+        }
+        const arrivoFmt  = new Date(arrivoISO).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+        const oraFmt     = uscitaOra.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+
+        // Calcola FLH provvisorio solo per mostrarlo
+        let flh = { testa:0, coda:0, straordinario:0, tot:0, fmt:'0h 00m' };
+        if (todayShift && arrivoISO) flh = calcolaFLH(arrivoISO, uscitaOra, todayShift.inizio, todayShift.fine);
+        const isFMH  = !!(todayShift && todayShift.flhDisabilitato);
+        const colore = isFMH ? '#FBBF24' : '#F59E0B';
+        const tipo   = isFMH ? 'FMH' : 'FLH';
+
+        // Salva come provvisoria — verrà finalizzata se non rientri entro 30 min
+        S.set('uscita_provvisoria', {
+          ts: uscitaOra.toISOString(),
+          arrivoISO,
+        });
+        const fineTurnoFmt = todayShift ? fmtTime(todayShift.fine) : 'fine turno';
+        logAdd('info', 'Uscita provvisoria: ' + oraFmt, 'FLH calcolato se non rientri prima di ' + fineTurnoFmt);
+
+        document.body.innerHTML = `
+          <div style="height:100vh;display:flex;flex-direction:column;align-items:center;
+                      justify-content:center;background:#090909;gap:14px;padding:40px;font-family:sans-serif">
+            <div style="font-size:52px">🕐</div>
+            <div style="font-size:20px;font-weight:700;color:#F0F0F0">Uscita provvisoria</div>
+            <div style="font-size:36px;font-weight:700;color:${colore};font-family:monospace">${flh.fmt}</div>
+            <div style="font-size:13px;color:#888;font-family:monospace">${arrivoFmt} → ${oraFmt}</div>
+            <div style="background:rgba(255,255,255,.05);border-radius:10px;padding:12px 16px;margin-top:8px;max-width:300px;text-align:center">
+              <div style="font-size:12px;color:#666;line-height:1.5">
+                Il ${tipo} verrà calcolato definitivamente<br>
+                <strong style="color:#888">solo se il turno finisce senza che tu rientri</strong><br>
+                <span style="font-size:11px;color:#444">Fine turno: ${todayShift ? fmtTime(todayShift.fine) : '—'}</span>
+              </div>
+            </div>
+            <div style="font-size:13px;color:#555;margin-top:8px">Puoi chiudere Safari</div>
+          </div>`;
+      })();
     }
-  })();
 
   renderOggi(true);
 })();
