@@ -1731,32 +1731,51 @@ async function salvaBackupCompleto() {
 
     // ── File 2: QR code come PNG ─────────────────────────────
     status.textContent = '⏳ Generazione QR...';
-    const qrPng = await new Promise((resolve, reject) => {
-      const div = document.createElement('div');
-      div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
-      document.body.appendChild(div);
-      const qr = new QRCode(div, {
-        text: JSON.stringify({
-          k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
-          lat: cfg.workLat, lng: cfg.workLng,
-          gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
-        }),
-        width: 300, height: 300,
-        colorDark: '#000000', colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.M,
+    let qrPng = null;
+    try {
+      qrPng = await new Promise((resolve, reject) => {
+        const div = document.createElement('div');
+        div.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+        document.body.appendChild(div);
+        new QRCode(div, {
+          text: JSON.stringify({
+            k: cfg.apiKey, c: cfg.calendarId, r: cfg.workRadius,
+            lat: cfg.workLat, lng: cfg.workLng,
+            gt: cfg.ghToken, go: cfg.ghOwner, gr: cfg.ghRepo,
+          }),
+          width: 300, height: 300,
+          colorDark: '#000000', colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M,
+        });
+        setTimeout(() => {
+          try {
+            const canvas = div.querySelector('canvas');
+            if (!canvas) { document.body.removeChild(div); resolve(null); return; }
+            canvas.toBlob(blob => {
+              document.body.removeChild(div);
+              resolve(blob);
+            }, 'image/png');
+          } catch(e) {
+            try { document.body.removeChild(div); } catch(_) {}
+            resolve(null); // QR fallito ma non bloccante
+          }
+        }, 600);
       });
-      setTimeout(() => {
-        try {
-          const canvas = div.querySelector('canvas');
-          if (!canvas) { reject(new Error('Canvas non trovato')); return; }
-          canvas.toBlob(blob => {
-            document.body.removeChild(div);
-            resolve(blob);
-          }, 'image/png');
-        } catch(e) { document.body.removeChild(div); reject(e); }
-      }, 500);
-    });
-    cartella.file('qr_backup.png', qrPng);
+    } catch(e) {
+      console.warn('QR generation failed:', e);
+      qrPng = null;
+    }
+
+    if (qrPng) {
+      cartella.file('qr_backup.png', qrPng);
+    } else {
+      // QR non disponibile — aggiungi un file di testo al posto
+      cartella.file('qr_backup_NOTA.txt',
+        'Il QR code non è stato generato su questo browser.\n' +
+        'Per generarlo, usa l\'app su iPhone:\n' +
+        '⚙️ → Backup & Ripristino → Genera QR → Screenshot\n'
+      );
+    }
 
     // ── File 3: istruzioni.txt ───────────────────────────────
     const pinInput = document.getElementById('pin-input');
