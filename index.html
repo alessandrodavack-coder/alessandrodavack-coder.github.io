@@ -401,6 +401,8 @@ const GH = {
       return r.ok;
     } catch(e) { return false; }
   },
+
+  async saveFile(token, owner, repo, data, sha, file) {
     try {
       const body = {
         message: 'FLH update ' + new Date().toISOString().slice(0,10),
