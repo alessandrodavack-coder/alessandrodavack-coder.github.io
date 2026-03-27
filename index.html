@@ -388,7 +388,19 @@ const GH = {
     } catch(e) { console.error('GH getFile error:', e); logAdd('sync_err', 'GitHub getFile: ' + e.message, ''); return null; }
   },
 
-  async saveFile(token, owner, repo, data, sha, file) {
+  async deleteFile(token, owner, repo, file, sha, message) {
+    try {
+      const r = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/contents/${file}`,
+        {
+          method: 'DELETE',
+          headers: this.headers(token),
+          body: JSON.stringify({ message: message || 'delete', sha }),
+        }
+      );
+      return r.ok;
+    } catch(e) { return false; }
+  },
     try {
       const body = {
         message: 'FLH update ' + new Date().toISOString().slice(0,10),
@@ -411,6 +423,50 @@ const GH = {
 };
 
 // Carica dati da GitHub e aggiorna localStorage
+
+// ── TRIGGER GITHUB ──────────────────────────────────────────
+// Le Shortcut iOS scrivono trigger_arrivo.json o trigger_uscita.json
+// tramite GitHub API (funziona col telefono bloccato).
+// L'app legge il trigger all'apertura, lo processa e lo cancella.
+async function processaTriggerGitHub() {
+  const cfg = getConfig();
+  if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return;
+
+  for (const tipo of ['arrivo', 'uscita']) {
+    const filename = 'trigger_' + tipo + '.json';
+    try {
+      const result = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, filename);
+      if (!result || !result.content) continue;
+
+      const trigger = result.content;
+      const triggerTs = new Date(trigger.ts);
+      const ora = triggerTs.toLocaleTimeString('it-IT', {hour:'2-digit', minute:'2-digit'});
+
+      // Cancella subito il trigger per evitare doppia esecuzione
+      await GH.deleteFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, filename, result.sha,
+        'FLH: trigger ' + tipo + ' processato');
+
+      if (tipo === 'arrivo') {
+        // Registra arrivo solo se non ce n'è già uno valido oggi
+        const arrivoEsistente = S.get('arrivo');
+        if (!arrivoEsistente || !isArrivoValido(arrivoEsistente)) {
+          S.set('arrivo', triggerTs.toISOString());
+          logAdd('arrivo', 'Arrivo da Shortcut (bloccato): ' + ora, '');
+          logAdd('info', 'Trigger GitHub letto: arrivo ' + ora, '');
+        }
+      } else {
+        // Registra uscita provvisoria
+        const arrivoISO = S.get('arrivo');
+        if (arrivoISO && isArrivoValido(arrivoISO)) {
+          S.set('uscita_provvisoria', { ts: triggerTs.toISOString(), arrivoISO });
+          logAdd('info', 'Trigger GitHub letto: uscita ' + ora, 'Provvisoria — verrà finalizzata a fine turno');
+        }
+      }
+    } catch(e) {
+      // Trigger non presente o errore — ignora
+    }
+  }
+}
 
 // ─── 3. SYNC ───────────────────────────────────────────────
 async function ghLoad() {
@@ -2152,6 +2208,10 @@ controllaCambioMese();
   // Sync da GitHub (se configurato) — aggiorna localStorage con dati remoti
   const synced = await ghLoad();
   if (synced) controllaCambioMese();
+
+  // Legge trigger scritti dalle Shortcut iOS via GitHub API
+  // (funziona anche col telefono bloccato — nessuna app si apre)
+  await processaTriggerGitHub();
 
   // Verifica uscita provvisoria pendente — logica basata sul turno:
   // se il turno è finito e non sei rientrato → FLH reale, altrimenti aspetta
