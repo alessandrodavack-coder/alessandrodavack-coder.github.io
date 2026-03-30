@@ -752,7 +752,7 @@ async function fetchShift() {
       const titolo = (e.summary || '').toUpperCase().trim();
       if (titolo.startsWith('MNL') || titolo.startsWith('MRIP') ||
           titolo === 'MNL' || titolo === 'MRIP') {
-        giorniFMH.add(e.start.date); // es. "2026-03-21"
+        giorniFMH.add(e.start.date); // YYYY-MM-DD già in locale per eventi tutto-il-giorno
       }
     }
 
@@ -776,26 +776,39 @@ async function fetchShift() {
         }
         continue;
       }
-      // Evento con orario — controlla se quel giorno ha un marcatore FMH
-      const dataEvento = e.start.dateTime.slice(0,10);
+      // Evento con orario — usa data locale (non UTC) per confronto
+      const startDt = new Date(e.start.dateTime);
+      const dataEventoLocale = startDt.getFullYear() + '-' + pad(startDt.getMonth()+1) + '-' + pad(startDt.getDate());
       const isFMHTitolo = titolo.startsWith('MNL') || titolo.startsWith('MRIP');
-      const isFMHGiorno = giorniFMH.has(dataEvento);
-      allEvents.push({ ...e, _fmh: isFMHTitolo || isFMHGiorno });
+      const isFMHGiorno = giorniFMH.has(e.start.date || dataEventoLocale);
+      allEvents.push({ ...e, _fmh: isFMHTitolo || isFMHGiorno, _dataLocale: dataEventoLocale });
     }
     const logCorrente = S.get('log_corrente') || [];
 
     // Helper: questo turno è già nel log nelle ultime 48h?
+    // Controlla sia per turnoInizio (orario inizio) che per data registrazione
     const giaLoggato = startDate => {
       const ini = pad(startDate.getHours()) + ':' + pad(startDate.getMinutes());
-      return logCorrente.some(r => {
+      // Cerca riga con stesso turnoInizio registrata nelle ultime 48h
+      const perInizio = logCorrente.some(r => {
         if (r.turnoInizio !== ini) return false;
         return (now - new Date(r.data)) < 48 * 60 * 60 * 1000;
+      });
+      if (perInizio) return true;
+      // Fallback: cerca per data locale del turno (copre turni notturni)
+      const dataLocaleTurno = startDate.getFullYear() + '-' + pad(startDate.getMonth()+1) + '-' + pad(startDate.getDate());
+      return logCorrente.some(r => {
+        const rDate = new Date(r.data);
+        const rDataLocale = rDate.getFullYear() + '-' + pad(rDate.getMonth()+1) + '-' + pad(rDate.getDate());
+        // Considera registrato se la riga è di ieri o oggi E il turno è quello stesso (stesso orario inizio)
+        return r.turnoInizio === ini && (rDataLocale === dataLocaleTurno ||
+          rDataLocale === todayStr || rDataLocale === yesterdayStr);
       });
     };
 
     // ── CASO 1: turno di ieri ancora IN CORSO adesso ──
     const inCorso = allEvents.find(e => {
-      if (e.start.dateTime.slice(0,10) !== yesterdayStr) return false;
+      if (e._dataLocale !== yesterdayStr) return false;
       const end = new Date(e.end.dateTime);
       return now <= end;
     });
@@ -807,7 +820,7 @@ async function fetchShift() {
     // ── CASO 2: turno notturno di ieri, finito OGGI dopo mezzanotte,
     //            uscita non ancora registrata ──
     const notturnoFinito = allEvents.find(e => {
-      if (e.start.dateTime.slice(0,10) !== yesterdayStr) return false;
+      if (e._dataLocale !== yesterdayStr) return false;
       const end = new Date(e.end.dateTime);
       const endStr = end.getFullYear() + '-' + pad(end.getMonth()+1) + '-' + pad(end.getDate());
       if (endStr !== todayStr) return false; // finisce ieri → non è notturno
@@ -821,9 +834,7 @@ async function fetchShift() {
 
     // ── CASO 3: turno che INIZIA oggi, non ancora loggato ──
     const turniOggi = allEvents.filter(e => {
-      const start = new Date(e.start.dateTime);
-      const localDate = start.getFullYear() + '-' + pad(start.getMonth()+1) + '-' + pad(start.getDate());
-      return localDate === todayStr && !giaLoggato(start);
+      return e._dataLocale === todayStr && !giaLoggato(new Date(e.start.dateTime));
     });
     if (!turniOggi.length) { calendarError = 'Nessun turno oggi nel calendario "Turni"'; return null; }
     const ev = turniOggi[0];
@@ -1989,7 +2000,11 @@ async function salvaConPIN() {
     }));
     const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, payload);
     const blob = { salt: Array.from(salt), iv: Array.from(iv), data: Array.from(new Uint8Array(ciphertext)) };
-    const sha = S.get('pin_sha');
+
+    // Legge sempre lo sha attuale prima di scrivere (evita conflitti)
+    const existing = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, 'config_pin.json');
+    const sha = existing ? existing.sha : null;
+
     const newSha = await GH.saveFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo, blob, sha, 'config_pin.json');
     if (newSha) {
       S.set('pin_sha', newSha);
