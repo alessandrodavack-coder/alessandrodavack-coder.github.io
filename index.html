@@ -1500,8 +1500,9 @@ function salvaModificaGiorno() {
   };
   S.set('log_corrente', log);
 
-  const tot = (S.get('mese_corrente') || 0) - vecchioFlh + flh.tot;
-  S.set('mese_corrente', Math.max(0, tot));
+  // Ricalcola totale mese dal log (più affidabile del delta)
+  const nuovoTot = log.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+  S.set('mese_corrente', nuovoTot);
 
   logAdd('modifica', 'Giorno modificato: ' + r.dateFmt, r.arrivo + ' → ' + r.uscita + ' → ' + flh.fmt);
   chiudiModal('modal-modifica');
@@ -1514,13 +1515,14 @@ function eliminaGiorno(idx) {
   if (!confirm('Eliminare questo giorno dal log?')) return;
   const log = S.get('log_corrente') || [];
   const riga = log[idx];
-  const vecchioFlh = riga ? riga.flhTot : 0;
   const dateFmtEliminato = riga ? riga.dateFmt : '';
+  // Rimuovi dal log
   log.splice(idx, 1);
   S.set('log_corrente', log);
-  const tot = Math.max(0, (S.get('mese_corrente') || 0) - vecchioFlh);
-  S.set('mese_corrente', tot);
-  logAdd('modifica', 'Giorno eliminato: ' + dateFmtEliminato, '');
+  // Ricalcola totale mese dal log aggiornato (più affidabile che sottrarre)
+  const nuovoTot = log.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+  S.set('mese_corrente', nuovoTot);
+  logAdd('modifica', 'Giorno eliminato: ' + dateFmtEliminato, 'Nuovo totale: ' + nuovoTot + ' min');
   chiudiModal('modal-modifica');
   ghSave();
   renderMese();
@@ -2092,6 +2094,10 @@ function scansionaQR() {
 function leggiQRdaFile(event) {
   const file = event.target.files[0];
   if (!file) return;
+
+  // Mostra feedback immediato
+  alert('⏳ Lettura QR in corso...');
+
   const reader = new FileReader();
   reader.onload = function(e) {
     const img = new Image();
@@ -2103,34 +2109,47 @@ function leggiQRdaFile(event) {
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, cv.width, cv.height);
       const code = jsQR(imgData.data, imgData.width, imgData.height);
-      if (!code) { alert('❌ QR non riconosciuto. Riprova con uno screenshot più nitido.'); return; }
+      if (!code) {
+        alert('❌ QR non riconosciuto.\n\nConsigli:\n• Usa lo screenshot salvato in Foto (non una foto del QR)\n• Assicurati che il QR sia ben visibile e non ritagliato\n• Lo screenshot deve essere quello generato dall\'app in ⚙️ → Genera QR');
+        return;
+      }
       try {
         const d = JSON.parse(code.data);
         const cfg = {
-          apiKey:     d.k  || '',
-          calendarId: d.c  || '',
-          workRadius: d.r  || 150,
+          apiKey:     d.k   || '',
+          calendarId: d.c   || '',
+          workRadius: d.r   || 150,
           workLat:    d.lat || 41.9248,
           workLng:    d.lng || 12.4598,
-          ghToken:    d.gt || '',
-          ghOwner:    d.go || '',
-          ghRepo:     d.gr || '',
+          ghToken:    d.gt  || '',
+          ghOwner:    d.go  || '',
+          ghRepo:     d.gr  || '',
         };
         S.set('config', cfg);
-        alert('✅ Impostazioni ripristinate dal QR!\n\nRiconnessione a GitHub in corso...');
-        // Ricarica dati da GitHub
-        ghLoad().then(ok => {
-          if (ok) {
+        // Mostra riepilogo impostazioni caricate
+        alert('✅ QR letto correttamente!\n\n' +
+          '• API Key: ' + (cfg.apiKey ? '✅' : '❌') + '\n' +
+          '• Calendar ID: ' + (cfg.calendarId ? '✅' : '❌') + '\n' +
+          '• GitHub Token: ' + (cfg.ghToken ? '✅' : '❌') + '\n' +
+          '• Repository: ' + (cfg.ghOwner || '—') + '/' + (cfg.ghRepo || '—') + '\n\n' +
+          (cfg.ghToken ? 'Connessione a GitHub in corso...' : '⚠️ GitHub non configurato nel QR')
+        );
+        if (cfg.ghToken) {
+          ghLoad().then(ok => {
+            alert(ok ? '✅ Dati ripristinati da GitHub!' : '⚠️ GitHub non raggiungibile — riprova più tardi.');
             controllaCambioMese();
-            alert('✅ Dati ripristinati da GitHub!');
-          }
+            navTo('oggi');
+            renderOggi(true);
+          });
+        } else {
           navTo('oggi');
           renderOggi(true);
-        });
+        }
       } catch(err) {
-        alert('❌ QR non valido o danneggiato.');
+        alert('❌ QR non valido: ' + err.message);
       }
     };
+    img.onerror = function() { alert('❌ Impossibile leggere l\'immagine.'); };
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
