@@ -503,14 +503,17 @@ function mergeLog(logA, logB) {
 // Salva su GitHub con strategia read-before-write:
 // rilegge sempre l'ultimo sha remoto e fa merge prima di scrivere.
 // Garantisce coerenza anche con due dispositivi aperti contemporaneamente.
-async function ghSave() {
+// forzaLocale=true: non fa merge, il localStorage è sorgente di verità
+// (usato dopo eliminazioni/modifiche manuali per non ripristinare i dati)
+async function ghSave(forzaLocale = false) {
   const cfg = getConfig();
   if (!cfg.ghToken || !cfg.ghOwner || !cfg.ghRepo) return false;
 
   const remote = await GH.getFile(cfg.ghToken, cfg.ghOwner, cfg.ghRepo);
   let sha = remote ? remote.sha : S.get('gh_sha');
 
-  if (remote && remote.content) {
+  // Merge solo se NON è una scrittura forzata (es. dopo eliminazione)
+  if (!forzaLocale && remote && remote.content) {
     const rem = remote.content;
     const localLog = S.get('log_corrente') || [];
     const remoteLog = rem.log_corrente || [];
@@ -1355,22 +1358,97 @@ function renderStorico() {
   if (!archivio.length) {
     html += '<div class="empty"><div class="ico">🗂️</div>Nessun mese archiviato ancora.<br>Il primo cambio mese archivierà i dati automaticamente.</div>';
   } else {
-    archivio.forEach(a => {
+    archivio.forEach((a, idx) => {
       const pct = Math.min(100, Math.round(a.totMin / 600 * 100));
-      html += `<div class="archive-item" onclick="mostraDettaglioMese('${a.mese}')" style="cursor:pointer">
-        <div>
-          <div class="archive-mese">${nomeMese(a.mese)}</div>
-          <div class="archive-giorni">${a.giorni.length} giorni · ${pct}% del limite mensile</div>
+      html += `<div class="archive-item" style="flex-direction:column;align-items:stretch;gap:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="mostraDettaglioMese('${a.mese}')">
+          <div>
+            <div class="archive-mese">${nomeMese(a.mese)}</div>
+            <div class="archive-giorni">${a.giorni.length} giorni · ${pct}% del limite mensile</div>
+          </div>
+          <div style="text-align:right">
+            <div class="archive-tot">${a.totFmt}</div>
+            <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">di 10h 00m</div>
+          </div>
         </div>
-        <div style="text-align:right">
-          <div class="archive-tot">${a.totFmt}</div>
-          <div style="font-size:10px;color:var(--t3);font-family:var(--mono)">di 10h 00m</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn-small" style="flex:1" onclick="apriModificaMeseArchiviato(${idx})">✏️ Modifica</button>
+          <button class="btn-small" style="flex:1;border-color:var(--red);color:#FCA5A5" onclick="eliminaMeseArchiviato(${idx})">🗑️ Elimina</button>
         </div>
       </div>`;
     });
   }
   html += '</div>';
   document.getElementById('storico-content').innerHTML = html;
+}
+
+let archEditIdx = null;
+
+function apriModificaMeseArchiviato(idx) {
+  const archivio = S.get('archivio') || [];
+  const mese = archivio[idx];
+  if (!mese) return;
+  archEditIdx = idx;
+
+  let html = `
+    <div style="font-size:13px;color:var(--t2);margin-bottom:16px">
+      ${nomeMese(mese.mese)} · ${mese.giorni.length} giorni · ${mese.totFmt}
+    </div>
+    <div class="log-list">`;
+
+  if (!mese.giorni.length) {
+    html += '<div style="color:var(--t3);font-size:13px">Nessun giorno registrato in questo mese</div>';
+  } else {
+    mese.giorni.forEach((r, i) => {
+      html += `<div class="log-item">
+        <div style="min-width:0">
+          <div class="log-date">${r.dateFmt}</div>
+          <div class="log-turno">${r.turno || '—'}</div>
+          <div class="log-details">${r.arrivo}→${r.uscita} · mensa ${r.mensa==='si'?'✓':'✗'}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">
+          <div class="${(r.flhTot||0) > 0 ? 'log-flh' : 'log-flh zero'}">${r.flhFmt}</div>
+          <button class="btn-small" style="border-color:var(--red);color:#FCA5A5" onclick="eliminaGiornoArchiviato(${idx},${i})">🗑️</button>
+        </div>
+      </div>`;
+    });
+  }
+
+  html += `</div>
+    <div class="divider"></div>
+    <button class="btn-secondary" onclick="chiudiModal('modal-modifica')">Chiudi</button>`;
+
+  document.getElementById('modal-modifica-content').innerHTML = html;
+  document.getElementById('modal-modifica').classList.add('open');
+}
+
+function eliminaGiornoArchiviato(meseIdx, giornoIdx) {
+  if (!confirm('Eliminare questo giorno dall\'archivio?')) return;
+  const archivio = S.get('archivio') || [];
+  const mese = archivio[meseIdx];
+  if (!mese) return;
+  mese.giorni.splice(giornoIdx, 1);
+  // Ricalcola totale del mese
+  mese.totMin = mese.giorni.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+  mese.totFmt = minToHM(mese.totMin);
+  S.set('archivio', archivio);
+  logAdd('modifica', 'Giorno eliminato da archivio ' + mese.mese, '');
+  ghSave(true);
+  // Aggiorna il modal
+  apriModificaMeseArchiviato(meseIdx);
+  renderStorico();
+}
+
+function eliminaMeseArchiviato(idx) {
+  const archivio = S.get('archivio') || [];
+  const mese = archivio[idx];
+  if (!mese) return;
+  if (!confirm('Eliminare l\'intero mese ' + nomeMese(mese.mese) + ' dall\'archivio?\nQuesta azione è irreversibile.')) return;
+  archivio.splice(idx, 1);
+  S.set('archivio', archivio);
+  logAdd('modifica', 'Mese eliminato dall\'archivio: ' + mese.mese, '');
+  ghSave(true);
+  renderStorico();
 }
 
 function mostraDettaglioMese(meseKey) {
@@ -1506,7 +1584,7 @@ function salvaModificaGiorno() {
 
   logAdd('modifica', 'Giorno modificato: ' + r.dateFmt, r.arrivo + ' → ' + r.uscita + ' → ' + flh.fmt);
   chiudiModal('modal-modifica');
-  ghSave();
+  ghSave(true); // forzaLocale
   renderMese();
   alert(`✅ Giorno modificato\nFLH: ${flh.fmt}`);
 }
@@ -1524,7 +1602,7 @@ function eliminaGiorno(idx) {
   S.set('mese_corrente', nuovoTot);
   logAdd('modifica', 'Giorno eliminato: ' + dateFmtEliminato, 'Nuovo totale: ' + nuovoTot + ' min');
   chiudiModal('modal-modifica');
-  ghSave();
+  ghSave(true); // forzaLocale: non ripristinare il giorno eliminato
   renderMese();
 }
 // ─── 17. SETUP ─────────────────────────────────────────────
