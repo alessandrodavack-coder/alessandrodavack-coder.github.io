@@ -17,24 +17,8 @@
       "flhTot": 0,
       "flhFmt": "0h 00m",
       "isFMH": false
-    },
-    {
-      "data": "2026-03-31T15:19:59.376Z",
-      "dateFmt": "Mar 31 Mar",
-      "turno": "Turno",
-      "turnoInizio": "11:30",
-      "turnoFine": "20:05",
-      "arrivo": "11:35",
-      "uscita": "20:05",
-      "mensa": "si",
-      "flhTesta": 0,
-      "flhCoda": 0,
-      "flhStraordinario": 0,
-      "flhTot": 0,
-      "flhFmt": "0h 00m",
-      "isFMH": false
     }
   ],
   "archivio": [],
-  "aggiornato": "2026-04-01T23:16:48.966Z"
+  "aggiornato": "2026-04-01T23:16:54.731Z"
 }
