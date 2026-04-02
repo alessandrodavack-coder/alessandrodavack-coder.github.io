@@ -1,6 +1,6 @@
 {
   "mese_attivo": "2026-04",
-  "mese_corrente": 120,
+  "mese_corrente": 31,
   "log_corrente": [
     {
       "data": "2026-04-02T00:45:00.000Z",
@@ -11,14 +11,14 @@
       "arrivo": "19:41",
       "uscita": "02:45",
       "mensa": "si",
-      "flhTesta": 120,
+      "flhTesta": 31,
       "flhCoda": 0,
       "flhStraordinario": 5,
-      "flhTot": 120,
-      "flhFmt": "2h 00m",
+      "flhTot": 31,
+      "flhFmt": "0h 31m",
       "isFMH": false
     }
   ],
   "archivio": [],
-  "aggiornato": "2026-04-02T00:46:25.429Z"
+  "aggiornato": "2026-04-02T00:48:17.567Z"
 }
