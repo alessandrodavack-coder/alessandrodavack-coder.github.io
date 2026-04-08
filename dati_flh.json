@@ -65,8 +65,24 @@
       "flhTot": 90,
       "flhFmt": "1h 30m",
       "isFMH": false
+    },
+    {
+      "data": "2026-04-08T23:03:10.209Z",
+      "dateFmt": "Mer 8 Apr",
+      "turno": "—",
+      "turnoInizio": "—",
+      "turnoFine": "—",
+      "arrivo": "13:45",
+      "uscita": "01:03",
+      "mensa": "si",
+      "flhTesta": 0,
+      "flhCoda": 0,
+      "flhStraordinario": 0,
+      "flhTot": 0,
+      "flhFmt": "0h 00m",
+      "isFMH": false
     }
   ],
   "archivio": [],
-  "aggiornato": "2026-04-07T23:32:23.566Z"
+  "aggiornato": "2026-04-08T23:03:10.515Z"
 }
