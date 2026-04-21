@@ -69,9 +69,9 @@
     {
       "data": "2026-04-16T17:53:20.813Z",
       "dateFmt": "Gio 16 Apr",
-      "turno": "ÃÂ¢ÃÂÃÂ",
-      "turnoInizio": "ÃÂ¢ÃÂÃÂ",
-      "turnoFine": "ÃÂ¢ÃÂÃÂ",
+      "turno": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
+      "turnoInizio": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
+      "turnoFine": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
       "arrivo": "19:12",
       "uscita": "19:53",
       "mensa": "si",
@@ -129,8 +129,24 @@
       "flhTot": 0,
       "flhFmt": "0h 00m",
       "isFMH": false
+    },
+    {
+      "data": "2026-04-21T22:37:00.000Z",
+      "dateFmt": "Mer 22 Apr",
+      "turno": "Turno",
+      "turnoInizio": "15:55",
+      "turnoFine": "00:30",
+      "arrivo": "16:10",
+      "uscita": "00:37",
+      "mensa": "si",
+      "flhTesta": 0,
+      "flhCoda": 0,
+      "flhStraordinario": 7,
+      "flhTot": 0,
+      "flhFmt": "0h 00m",
+      "isFMH": false
     }
   ],
   "archivio": [],
-  "aggiornato": "2026-04-20T13:23:26.215Z"
+  "aggiornato": "2026-04-21T23:21:01.673Z"
 }
