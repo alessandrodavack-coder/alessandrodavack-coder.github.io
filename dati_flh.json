@@ -1,6 +1,6 @@
 {
   "mese_attivo": "2026-04",
-  "mese_corrente": 273,
+  "mese_corrente": 390,
   "log_corrente": [
     {
       "data": "2026-04-02T00:45:00.000Z",
@@ -69,9 +69,9 @@
     {
       "data": "2026-04-16T17:53:20.813Z",
       "dateFmt": "Gio 16 Apr",
-      "turno": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
-      "turnoInizio": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
-      "turnoFine": "ÃÂÃÂ¢ÃÂÃÂÃÂÃÂ",
+      "turno": "ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ",
+      "turnoInizio": "ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ",
+      "turnoFine": "ÃÂÃÂÃÂÃÂ¢ÃÂÃÂÃÂÃÂÃÂÃÂÃÂÃÂ",
       "arrivo": "19:12",
       "uscita": "19:53",
       "mensa": "si",
@@ -145,8 +145,24 @@
       "flhTot": 0,
       "flhFmt": "0h 00m",
       "isFMH": false
+    },
+    {
+      "data": "2026-04-22T16:08:00.000Z",
+      "dateFmt": "Mer 22 Apr",
+      "turno": "Turno",
+      "turnoInizio": "11:30",
+      "turnoFine": "20:05",
+      "arrivo": "11:31",
+      "uscita": "18:08",
+      "mensa": "si",
+      "flhTesta": 0,
+      "flhCoda": 117,
+      "flhStraordinario": 0,
+      "flhTot": 117,
+      "flhFmt": "1h 57m",
+      "isFMH": false
     }
   ],
   "archivio": [],
-  "aggiornato": "2026-04-21T23:21:01.673Z"
+  "aggiornato": "2026-04-22T18:23:52.229Z"
 }
