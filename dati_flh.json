@@ -1,6 +1,6 @@
 {
   "mese_attivo": "2026-05",
-  "mese_corrente": 71,
+  "mese_corrente": 72,
   "log_corrente": [
     {
       "data": "2026-05-09T11:54:00.000Z",
@@ -9,13 +9,13 @@
       "turnoInizio": "05:55",
       "turnoFine": "14:30",
       "arrivo": "05:57",
-      "uscita": "13:54",
+      "uscita": "13:53",
       "mensa": "si",
       "flhTesta": 0,
-      "flhCoda": 36,
+      "flhCoda": 37,
       "flhStraordinario": 0,
-      "flhTot": 36,
-      "flhFmt": "0h 36m",
+      "flhTot": 37,
+      "flhFmt": "0h 37m",
       "isFMH": false,
       "aggiunto_manualmente": true
     },
@@ -190,5 +190,5 @@
       ]
     }
   ],
-  "aggiornato": "2026-05-10T05:11:30.670Z"
+  "aggiornato": "2026-05-10T05:11:40.469Z"
 }
