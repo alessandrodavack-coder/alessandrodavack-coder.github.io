@@ -585,20 +585,23 @@ function controllaCambioMese() {
   if (meseAttivo && meseAttivo !== meseOggi) {
     const totMin = S.get('mese_corrente') || 0;
     const log = S.get('log_corrente') || [];
-    const archivio = S.get('archivio') || [];
-    const meseArchiviato = { mese: meseAttivo, totMin, totFmt: minToHM(totMin), giorni: log };
-    archivio.unshift(meseArchiviato);
-    S.set('archivio', archivio);
+    // Archivia solo se ci sono giorni registrati (evita di archiviare mesi vuoti)
+    if (log.length > 0) {
+      const archivio = S.get('archivio') || [];
+      const meseArchiviato = { mese: meseAttivo, totMin, totFmt: minToHM(totMin), giorni: log };
+      // Non duplicare se già archiviato
+      if (!archivio.find(a => a.mese === meseAttivo)) {
+        archivio.unshift(meseArchiviato);
+        S.set('archivio', archivio);
+        logAdd('archivio', 'Mese ' + meseAttivo + ' archiviato', 'Totale: ' + minToHM(totMin) + ' | ' + log.length + ' giorni');
+        archiviaMeseGitHub(meseAttivo, meseArchiviato).catch(()=>{});
+      }
+    }
     S.set('mese_corrente', 0);
     S.set('log_corrente', []);
     S.del('arrivo');
-    S.set('mese_attivo', meseOggi);
-    logAdd('archivio', 'Mese ' + meseAttivo + ' archiviato', 'Totale: ' + minToHM(totMin) + ' | ' + log.length + ' giorni');
-    archiviaMeseGitHub(meseAttivo, meseArchiviato).catch(()=>{});
-    ghSave();
-  } else {
-    S.set('mese_attivo', meseOggi);
   }
+  S.set('mese_attivo', meseOggi);
 }
 
 function minToHM(min) {
@@ -1203,7 +1206,10 @@ function renderMese() {
   </button>`;
 
   html += '<div class="divider"></div>';
-  html += `<div class="section-title">Giorni registrati (${log.length})</div>`;
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+    <div class="section-title" style="margin:0">Giorni registrati (${log.length})</div>
+    <button class="btn-small" onclick="apriAggiungiGiorno()">+ Aggiungi giorno</button>
+  </div>`;
   html += '<div class="log-list">';
 
   if (!log.length) {
@@ -1489,6 +1495,137 @@ function esportaStorico() {
 
 // ─── 16. MODIFICA LOG ──────────────────────────────────────
 let editIdx = null;
+
+// Aggiunta manuale di un giorno passato non registrato automaticamente
+function apriAggiungiGiorno() {
+  const meseKey = getMeseKey();
+  const html = `
+    <div class="alert-banner" style="margin-bottom:12px;font-size:12px">
+      Aggiungi manualmente un giorno non registrato automaticamente.<br>
+      Il calcolo FLH avviene in automatico dagli orari inseriti.
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Data (gg/mm/aaaa)</div>
+      <input class="setup-input" id="add-data" type="date" 
+        max="${new Date().toISOString().slice(0,10)}"
+        value="${new Date().toISOString().slice(0,10)}">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Turno — inizio</div>
+      <input class="setup-input" id="add-turno-ini" type="time" value="08:30">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Turno — fine</div>
+      <input class="setup-input" id="add-turno-fin" type="time" value="17:05">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Ora arrivo reale</div>
+      <input class="setup-input" id="add-arrivo" type="time" value="08:30">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Ora uscita reale</div>
+      <input class="setup-input" id="add-uscita" type="time" value="17:05">
+    </div>
+    <div class="setup-group">
+      <div class="setup-label">Mensa</div>
+      <div style="display:flex;gap:8px">
+        <button class="mensa-btn selected" id="add-mensa-si" onclick="toggleAddMensa('si')">🍽️ Sì</button>
+        <button class="mensa-btn" id="add-mensa-no" onclick="toggleAddMensa('no')">❌ No</button>
+      </div>
+    </div>
+    <div class="divider"></div>
+    <button class="btn-main arrival" onclick="salvaGiornoManuale()">✅ Aggiungi giorno</button>
+    <button class="btn-secondary" onclick="chiudiModal('modal-modifica')">Annulla</button>`;
+
+  document.getElementById('modal-modifica-content').innerHTML = html;
+  document.getElementById('modal-modifica').classList.add('open');
+}
+
+function toggleAddMensa(v) {
+  document.getElementById('add-mensa-si').classList.toggle('selected', v === 'si');
+  document.getElementById('add-mensa-no').classList.toggle('selected', v === 'no');
+}
+
+function salvaGiornoManuale() {
+  const dataStr  = document.getElementById('add-data').value;
+  const tIniStr  = document.getElementById('add-turno-ini').value;
+  const tFinStr  = document.getElementById('add-turno-fin').value;
+  const arrStr   = document.getElementById('add-arrivo').value;
+  const uscStr   = document.getElementById('add-uscita').value;
+  const mensa    = document.getElementById('add-mensa-si').classList.contains('selected') ? 'si' : 'no';
+
+  if (!dataStr || !tIniStr || !tFinStr || !arrStr || !uscStr) {
+    alert('⚠️ Compila tutti i campi.'); return;
+  }
+
+  // Costruisci le date
+  const [ah, am] = arrStr.split(':').map(Number);
+  const [uh, um] = uscStr.split(':').map(Number);
+  const [tih, tim] = tIniStr.split(':').map(Number);
+  const [tfh, tfm] = tFinStr.split(':').map(Number);
+
+  const base = new Date(dataStr + 'T00:00:00');
+  const arrivoD   = new Date(base); arrivoD.setHours(ah, am, 0, 0);
+  const uscitaD   = new Date(base); uscitaD.setHours(uh, um, 0, 0);
+  const turnoIni  = new Date(base); turnoIni.setHours(tih, tim, 0, 0);
+  const turnoFin  = new Date(base); turnoFin.setHours(tfh, tfm, 0, 0);
+
+  // Gestisce turni notturni
+  if (uscitaD <= arrivoD)   uscitaD.setDate(uscitaD.getDate() + 1);
+  if (turnoFin <= turnoIni) turnoFin.setDate(turnoFin.getDate() + 1);
+
+  // Verifica che il giorno appartenga al mese corrente
+  const meseGiorno = getMeseKey(base);
+  const meseCorrente = getMeseKey();
+  if (meseGiorno !== meseCorrente) {
+    alert('⚠️ La data selezionata (' + meseGiorno + ') non è nel mese corrente (' + meseCorrente + ').\nPer i mesi archiviati usa Storico → ✏️ Modifica.');
+    return;
+  }
+
+  const pad = n => String(n).padStart(2,'0');
+  const fmtT = d => pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const flh  = calcolaFLH(arrivoD, uscitaD, turnoIni, turnoFin);
+
+  const riga = {
+    data: uscitaD.toISOString(),
+    dateFmt: fmtDate(base),
+    turno: tIniStr + '→' + tFinStr,
+    turnoInizio: fmtT(turnoIni),
+    turnoFine:   fmtT(turnoFin),
+    arrivo: fmtT(arrivoD),
+    uscita: fmtT(uscitaD),
+    mensa,
+    flhTesta: flh.testa, flhCoda: flh.coda,
+    flhStraordinario: flh.straordinario || 0,
+    flhTot: flh.tot, flhFmt: flh.fmt,
+    isFMH: false,
+    aggiunto_manualmente: true,
+  };
+
+  // Controlla duplicati
+  const log = S.get('log_corrente') || [];
+  const duplicato = log.find(r => r.turnoInizio === riga.turnoInizio &&
+    r.dateFmt === riga.dateFmt);
+  if (duplicato) {
+    if (!confirm('Esiste già una registrazione per questo giorno e turno. Sostituire?')) return;
+    const idx = log.indexOf(duplicato);
+    log.splice(idx, 1);
+  }
+
+  log.push(riga);
+  log.sort((a,b) => new Date(a.data) - new Date(b.data));
+  S.set('log_corrente', log);
+
+  // Ricalcola totale
+  const nuovoTot = log.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+  S.set('mese_corrente', nuovoTot);
+
+  logAdd('modifica', 'Giorno aggiunto manualmente: ' + riga.dateFmt, riga.arrivo + '→' + riga.uscita + ' FLH: ' + flh.fmt);
+  chiudiModal('modal-modifica');
+  ghSave(true);
+  renderMese();
+  alert('✅ Giorno aggiunto!\nFLH: ' + flh.fmt);
+}
 
 function apriModificaGiorno(idx) {
   editIdx = idx;
