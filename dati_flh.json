@@ -3,6 +3,22 @@
   "mese_corrente": 35,
   "log_corrente": [
     {
+      "data": "2026-05-10T04:57:15.174Z",
+      "dateFmt": "Dom 10 Mag",
+      "turno": "—",
+      "turnoInizio": "—",
+      "turnoFine": "—",
+      "arrivo": "06:57",
+      "uscita": "06:57",
+      "mensa": "si",
+      "flhTesta": 0,
+      "flhCoda": 0,
+      "flhStraordinario": 0,
+      "flhTot": 0,
+      "flhFmt": "0h 00m",
+      "isFMH": false
+    },
+    {
       "data": "2026-05-10T11:55:00.000Z",
       "dateFmt": "Dom 10 Mag",
       "turno": "05:55Ã¢ÂÂ14:30",
@@ -173,5 +189,5 @@
       ]
     }
   ],
-  "aggiornato": "2026-05-10T04:56:30.903Z"
+  "aggiornato": "2026-05-10T04:57:15.746Z"
 }
