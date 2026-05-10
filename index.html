@@ -478,11 +478,53 @@ async function ghLoad() {
   if (!result || !result.content) return false;
   const d = result.content;
   S.set('gh_sha', result.sha);
-  // La config viene gestita tramite QR, link o PIN — non da GitHub
-  if (d.mese_attivo) S.set('mese_attivo', d.mese_attivo);
-  if (d.mese_corrente !== undefined) S.set('mese_corrente', d.mese_corrente);
-  if (d.log_corrente) S.set('log_corrente', d.log_corrente);
-  if (d.archivio) S.set('archivio', d.archivio);
+
+  const meseOggi = getMeseKey();
+
+  // Se il mese su GitHub è diverso dal mese attuale:
+  // archivia i dati remoti (se ci sono) e parti con mese pulito
+  if (d.mese_attivo && d.mese_attivo !== meseOggi) {
+    // I giorni remoti appartengono a un mese vecchio → archiviali se non già presenti
+    const archivio = S.get('archivio') || (d.archivio || []);
+    if (d.log_corrente && d.log_corrente.length > 0) {
+      const giaPresente = archivio.find(a => a.mese === d.mese_attivo);
+      if (!giaPresente) {
+        archivio.unshift({
+          mese: d.mese_attivo,
+          totMin: d.mese_corrente || 0,
+          totFmt: minToHM(d.mese_corrente || 0),
+          giorni: d.log_corrente,
+        });
+        logAdd('archivio', 'Mese ' + d.mese_attivo + ' recuperato da GitHub', d.log_corrente.length + ' giorni');
+      }
+    }
+    if (d.archivio) {
+      // Unisci archivio remoto con quello locale senza duplicati
+      d.archivio.forEach(a => {
+        if (!archivio.find(x => x.mese === a.mese)) archivio.push(a);
+      });
+      archivio.sort((a,b) => b.mese.localeCompare(a.mese));
+    }
+    S.set('archivio', archivio);
+    S.set('mese_attivo', meseOggi);
+    S.set('mese_corrente', 0);
+    S.set('log_corrente', []);
+  } else {
+    // Stesso mese — carica normalmente filtrando solo i giorni del mese corrente
+    if (d.mese_attivo) S.set('mese_attivo', d.mese_attivo);
+    if (d.archivio) S.set('archivio', d.archivio);
+    if (d.log_corrente) {
+      // Filtra: tieni solo le righe del mese corrente
+      const logFiltrato = d.log_corrente.filter(r => {
+        const rData = new Date(r.data);
+        return getMeseKey(rData) === meseOggi;
+      });
+      S.set('log_corrente', logFiltrato);
+      const tot = logFiltrato.reduce((s,r) => s + (r.isFMH ? 0 : (r.flhTot||0)), 0);
+      S.set('mese_corrente', tot);
+    }
+  }
+
   logAdd('sync_ok', 'Dati caricati da GitHub', d.aggiornato ? 'Aggiornato: ' + new Date(d.aggiornato).toLocaleString('it-IT') : '');
   return true;
 }
