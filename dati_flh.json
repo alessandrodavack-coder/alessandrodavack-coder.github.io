@@ -61,7 +61,7 @@
       "turnoFine": "02:40",
       "arrivo": "20:54",
       "uscita": "02:46",
-      "mensa": "no",
+      "mensa": "si",
       "flhTesta": 103,
       "flhCoda": 0,
       "flhStraordinario": 6,
@@ -223,5 +223,5 @@
       ]
     }
   ],
-  "aggiornato": "2026-05-21T01:31:19.760Z"
+  "aggiornato": "2026-05-21T01:31:24.121Z"
 }
