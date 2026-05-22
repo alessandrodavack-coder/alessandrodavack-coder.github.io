@@ -1,11 +1,11 @@
 {
   "mese_attivo": "2026-05",
-  "mese_corrente": 200,
+  "mese_corrente": 262,
   "log_corrente": [
     {
       "data": "2026-05-08T16:31:00.000Z",
       "dateFmt": "Ven 8 Mag",
-      "turno": "11:30â19:05",
+      "turno": "11:30Ã¢ÂÂ19:05",
       "turnoInizio": "11:30",
       "turnoFine": "19:05",
       "arrivo": "12:20",
@@ -22,7 +22,7 @@
     {
       "data": "2026-05-09T11:54:00.000Z",
       "dateFmt": "Sab 9 Mag",
-      "turno": "05:55â14:30",
+      "turno": "05:55Ã¢ÂÂ14:30",
       "turnoInizio": "05:55",
       "turnoFine": "14:30",
       "arrivo": "05:57",
@@ -39,7 +39,7 @@
     {
       "data": "2026-05-10T12:30:00.000Z",
       "dateFmt": "Dom 10 Mag",
-      "turno": "05:55â14:30",
+      "turno": "05:55Ã¢ÂÂ14:30",
       "turnoInizio": "05:55",
       "turnoFine": "14:30",
       "arrivo": "05:57",
@@ -67,6 +67,22 @@
       "flhStraordinario": 6,
       "flhTot": 79,
       "flhFmt": "1h 19m",
+      "isFMH": false
+    },
+    {
+      "data": "2026-05-22T00:47:02.241Z",
+      "dateFmt": "Gio 21 Mag",
+      "turno": "Turno",
+      "turnoInizio": "18:05",
+      "turnoFine": "02:40",
+      "arrivo": "19:14",
+      "uscita": "02:47",
+      "mensa": "si",
+      "flhTesta": 62,
+      "flhCoda": 0,
+      "flhStraordinario": 7,
+      "flhTot": 62,
+      "flhFmt": "1h 02m",
       "isFMH": false
     }
   ],
@@ -223,5 +239,5 @@
       ]
     }
   ],
-  "aggiornato": "2026-05-21T01:31:42.669Z"
+  "aggiornato": "2026-05-22T00:47:02.507Z"
 }
