@@ -1,6 +1,6 @@
 {
   "mese_attivo": "2026-05",
-  "mese_corrente": 387,
+  "mese_corrente": 507,
   "log_corrente": [
     {
       "data": "2026-05-08T16:31:00.000Z",
@@ -50,6 +50,23 @@
       "flhStraordinario": 0,
       "flhTot": 0,
       "flhFmt": "0h 00m",
+      "isFMH": false,
+      "aggiunto_manualmente": true
+    },
+    {
+      "data": "2026-05-21T00:46:00.000Z",
+      "dateFmt": "Mer 20 Mag",
+      "turno": "18:05→02:40",
+      "turnoInizio": "18:05",
+      "turnoFine": "02:40",
+      "arrivo": "20:30",
+      "uscita": "02:46",
+      "mensa": "si",
+      "flhTesta": 120,
+      "flhCoda": 0,
+      "flhStraordinario": 6,
+      "flhTot": 120,
+      "flhFmt": "2h 00m",
       "isFMH": false,
       "aggiunto_manualmente": true
     },
@@ -257,5 +274,5 @@
       ]
     }
   ],
-  "aggiornato": "2026-05-28T17:11:30.171Z"
+  "aggiornato": "2026-05-28T17:12:46.236Z"
 }
